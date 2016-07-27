@@ -3,6 +3,9 @@
 #A script to parse the XML fields of sra.xml files obtained from NCBI.
 #Derived from the processing_from_ncbi.pl script used in-house at FlyBase.
 #
+#TO USE: This script will look for the folder "SRA" in the directory where it is placed.
+#Please create this folder and fill it with SRA XML files to be parsed.
+#
 #Built for SRA XSD 1-6a: http://www.ncbi.nlm.nih.gov/viewvc/v1/trunk/sra/doc/SRA_1-6a/
 #
 #Nodes and data retrieved:
@@ -38,7 +41,7 @@ foreach my $filename (@SRAfiles) {
 	my $dir_filename = "SRA/$filename"; # Add the directory name.
 	my $sra_xml = $parser->parse_file($dir_filename) or croak "Cannot parse document: $@";
 	foreach my $main_nodes ($sra_xml->findnodes('//EXPERIMENT_PACKAGE_SET/EXPERIMENT_PACKAGE')) {
-		my $accession = '';
+		my $accession;
 		foreach my $experiment_nodes ($main_nodes->findnodes('./EXPERIMENT')) {
 			$accession = $experiment_nodes->getAttribute('accession');
 			my $alias = $experiment_nodes->getAttribute('alias');
@@ -57,4 +60,23 @@ foreach my $filename (@SRAfiles) {
 	}
 }
 
-print Data::Dumper->Dump([\%main_hash], ['*main_hash']);
+# Print messages and provide option to save output below:
+print `clear`;
+print "SRA XML parser $VERSION\n";
+print scalar (keys %main_hash) . " entries extracted. Save to tab-delimited file \"extracted.tsv\"? (Y/n): ";
+my $answer = <STDIN>;
+chomp $answer;
+if ($answer eq "" || $answer eq "Y") {
+	open (TAB_OUTPUT, '>:encoding(UTF-8)', 'extracted.tsv') or die "Could not create file 'extracted.tsv' $!";
+	foreach my $key (keys %main_hash) { # Print the SRA accession number.
+		print TAB_OUTPUT "$key\n";
+		foreach my $hash_entry (keys %{$main_hash{$key}}){
+			print TAB_OUTPUT "$hash_entry\t$main_hash{$key}{$hash_entry}\n"; # Print out the contents of the hash-of-hashes.
+		}
+		print TAB_OUTPUT "\n"; # Separate each SRA entry by a newline.
+	}
+} else {
+	print "\"n\" entered, exiting program...\n";
+	exit;
+}
+# print Data::Dumper->Dump([\%main_hash], ['*main_hash']);
