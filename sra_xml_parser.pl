@@ -27,7 +27,7 @@ use version; our $VERSION = qv(0.0.1);
 
 my %main_hash; # Hash to store all parsed XML data.
 
-my $OUTFILE = 'output.log';
+my $OUTFILE = 'output_parser.log';
 open(STDERR, "| tee -i $OUTFILE") or die "WARNING: ERROR: Cannot open output.log\n";
 open(STDOUT, "| tee -i $OUTFILE") or die "WARNING: ERROR: Cannot open output.log\n";
 
