@@ -21,6 +21,7 @@ use strict;
 use Carp;
 use Data::Dumper;
 use XML::LibXML;
+use Storable;
 
 use version; our $VERSION = qv(0.0.1);
 
@@ -64,7 +65,7 @@ foreach my $filename (@SRAfiles) {
 print `clear`;
 print "SRA XML parser $VERSION\n";
 print scalar (keys %main_hash) . " entries extracted. Save to tab-delimited file \"extracted.tsv\"? (Y/n): ";
-my $answer = <STDIN>;
+my $answer = <>;
 chomp $answer;
 if ($answer eq "" || $answer eq "Y") {
 	open (TAB_OUTPUT, '>:encoding(UTF-8)', 'extracted.tsv') or die "Could not create file 'extracted.tsv' $!";
@@ -75,8 +76,20 @@ if ($answer eq "" || $answer eq "Y") {
 		}
 		print TAB_OUTPUT "\n"; # Separate each SRA entry by a newline.
 	}
+	close TAB_OUTPUT;
 } else {
-	print "\"n\" entered, exiting program...\n";
-	exit;
+	print "\"n\" entered.\n";
 }
+
+print "Export storable file \"extracted.results\" for use with curation script? (Y/n): ";
+my $answer2 = <>;
+chomp $answer2;
+if ($answer2 eq "" || $answer eq "Y") {
+	store \%main_hash, 'extracted.results';
+} else {
+	print "\"n\" entered.\n";
+}
+
+close $OUTFILE;
+exit;
 # print Data::Dumper->Dump([\%main_hash], ['*main_hash']);
