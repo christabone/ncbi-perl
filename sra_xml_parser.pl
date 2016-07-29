@@ -70,11 +70,9 @@ chomp $answer;
 if ($answer eq "" || $answer eq "Y") {
 	open (TAB_OUTPUT, '>:encoding(UTF-8)', 'extracted.tsv') or die "Could not create file 'extracted.tsv' $!";
 	foreach my $key (keys %main_hash) { # Print the SRA accession number.
-		print TAB_OUTPUT "$key\n";
 		foreach my $hash_entry (keys %{$main_hash{$key}}){
-			print TAB_OUTPUT "$hash_entry\t$main_hash{$key}{$hash_entry}\n"; # Print out the contents of the hash-of-hashes.
+			print TAB_OUTPUT "$key\t$hash_entry\t$main_hash{$key}{$hash_entry}\n"; # Print out the contents of the hash-of-hashes.
 		}
-		print TAB_OUTPUT "\n"; # Separate each SRA entry by a newline.
 	}
 	close TAB_OUTPUT;
 } else {
