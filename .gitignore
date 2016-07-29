@@ -1,3 +1,9 @@
 perlcritic
 output.log
 extracted.tsv
+output_parser.log
+output_curator.log
+.nfs000000000400d8f600000d8b
+fbbt.owl
+fbbt.obo
+extracted.results
