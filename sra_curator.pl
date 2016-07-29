@@ -10,7 +10,6 @@ use strict;
 use Carp;
 use Data::Dumper;
 use Storable;
-use OBO::Parser::OBOParser;
 
 use version; our $VERSION = qv(0.0.1);
 
@@ -20,6 +19,6 @@ open(STDOUT, "| tee -i $OUTFILE") or die "WARNING: ERROR: Cannot open output.log
 
 my %main_hash = %{retrieve('extracted.results')}; # Load the extracted.results file from the sra_xml_parser.pl script.
 
-
+print $test_query;
 
 # print Data::Dumper->Dump([\%main_hash], ['*main_hash']);
