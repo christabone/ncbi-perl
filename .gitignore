@@ -15,3 +15,7 @@ fbdv-non-classified.obo
 fbcv-simple.obo
 fbcv.obo
 metadata.tsv
+metadata.csv
+metadata2.csv
+.~lock.metadata
+.~lock.metadata2.csv#
