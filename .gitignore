@@ -8,9 +8,25 @@ fbbt.owl
 fbbt.obo
 extracted.results
 .nfs000000000536c5c400002c9e
+<<<<<<< HEAD
 .~lock.metadata.tsv#
 catalog-v001.xml
 flybase_sql.txt
 metadata.csv
 metadata.tsv
 user_curation.tsv~
+=======
+catalog-v001.xml
+fbdv.owl
+fbdv.obo
+fbdv-non-classified.obo
+fbcv-simple.obo
+fbcv.obo
+metadata.tsv
+metadata.csv
+metadata2.csv
+.~lock.metadata
+.~lock.metadata2.csv#
+flybase_sql.txt
+.~lock.metadata.tsv#
+>>>>>>> 709b9400aa30b992a96a0d15873be719fa8158ee
