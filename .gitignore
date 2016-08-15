@@ -19,3 +19,5 @@ metadata.csv
 metadata2.csv
 .~lock.metadata
 .~lock.metadata2.csv#
+flybase_sql.txt
+.~lock.metadata.tsv#
