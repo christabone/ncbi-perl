@@ -25,12 +25,13 @@ open(STDOUT, "| tee -i $OUTFILE") or die "WARNING: ERROR: Cannot open output.log
 my %store_hash = %{retrieve('extracted.results')}; # Load the extracted.results file from the sra_xml_parser.pl script.
 
 # Initialize the development, anatomy, and controlled vocabulary hashes.
-my %dv_hash; # development
-my %bt_hash; # anatomy
-my %cv_hash; # controlled vocabulary
-my %tc_hash; # cell lines
-my %gn_hash; # genes
-my %sn_hash; # strains
+# Making these global hashes to be used in subroutines.
+our %dv_hash; # development
+our %bt_hash; # anatomy
+our %cv_hash; # controlled vocabulary
+our %tc_hash; # cell lines
+our %gn_hash; # genes
+our %sn_hash; # strains
 
 # Initialize the output hash for metadata.
 my %metadata_hash_output;
@@ -232,15 +233,15 @@ sub sample_type_search {
 }
 
 sub stage_search {
-	my $search_output = "anatomy test";
-	my $id_output = "anatomy id";
+	my $search_output = "stage test";
+	my $id_output = "stage id";
 
 	return ($search_output, $id_output);
 }
 
 sub tissue_search {
-	my $search_output = "cv test";
-	my $id_output = "cv id";
+	my $search_output = "tissue test";
+	my $id_output = "tissue id";
 
 	return ($search_output, $id_output);
 }
@@ -253,29 +254,29 @@ sub cell_line_search {
 }
 
 sub strain_search {
-	my $search_output = "gene test";
-	my $id_output = "gene id";
+	my $search_output = "strain test";
+	my $id_output = "strain id";
 
 	return ($search_output, $id_output);
 }
 
 sub genotype_search {
-	my $search_output = "strain test";
-	my $id_output = "strain id";
+	my $search_output = "genotype test";
+	my $id_output = "genotype id";
 
 	return ($search_output, $id_output);
 }
 
 sub key_genes_search {
-	my $search_output = "strain test";
-	my $id_output = "strain id";
+	my $search_output = "key_genes test";
+	my $id_output = "key_genes id";
 
 	return ($search_output, $id_output);
 }
 
 sub sex_search {
-	my $search_output = "strain test";
-	my $id_output = "strain id";
+	my $search_output = "sex test";
+	my $id_output = "sex id";
 
 	return ($search_output, $id_output);
 }

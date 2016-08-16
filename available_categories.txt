@@ -1,0 +1,8 @@
+sample_type
+stage
+tissue
+cell_line
+strain
+genotype
+key_genes
+sex
