@@ -25,3 +25,8 @@ metadata2.csv
 .~lock.metadata2.csv#
 flybase_sql.txt
 .~lock.metadata.tsv#
+.gitignore~
+metadata_old.csv 
+metadata_old.tsv
+metadata_old.csv
+categories.tsv~

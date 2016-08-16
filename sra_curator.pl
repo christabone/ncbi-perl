@@ -32,6 +32,12 @@ my %tc_hash; # cell lines
 my %gn_hash; # genes
 my %sn_hash; # strains
 
+# Initialize the output hash for metadata.
+my %metadata_hash_output;
+
+my %cat_HoA; # metadata catagories. This is extracted from a TSV where the first column is the titles from the metadata
+# tsv file and the second column is which controlled vocabulary or data type to search. See 'categories.tsv'.
+
 # Create a new parser object.
 my $parser = OBO::Parser::OBOParser->new;
 
@@ -47,12 +53,15 @@ my @cv_terms = @{$cv_ontology->get_terms()};
 
 # Initialize the metadata hash.
 my $hash_obj = Text::CSV::Hashify->new( {
-        file        => 'metadata2.csv',
+        file        => 'metadata.csv',
         format      => 'hoh', # hash of hashes, which is default
         key         => 'RunSRR' 
 } );
 
-my $hash_ref = $hash_obj->all; # extract the entire file into a huge hash of hashes.
+my $metadata_hash_ref = $hash_obj->all; # extract the entire file into a huge hash of hashes.
+
+my %metadata_hash = %{$metadata_hash_ref}; # dereference the hash for ease of use.
+undef $metadata_hash_ref; # remove the old reference.
 
 # Initialize the user hash and Text::CSV object.
 my %user_hash;
@@ -68,37 +77,30 @@ my $tsv_obj = Text::CSV->new ( {
 &parse_for_hash('genes.tsv', \%gn_hash); # genes.
 &parse_for_hash('strains.tsv', \%sn_hash); # strains.
 
+# Load the categories file into a HoA.
+&parse_for_hash_of_arrays('categories.tsv', \%cat_HoA); # categories for metadata.
+
 # Parse the OBO objects in the array and extract name/id information. Store into a hash.
 &parse_obo(\@dv_terms, \%dv_hash); # development.
 &parse_obo(\@bt_terms, \%bt_hash); # anatomy.
 &parse_obo(\@cv_terms, \%cv_hash); # controlled vocabulary.
 
-# foreach my $key (keys $hash_ref) {
-# 	print $key . "\n";
-# 	my @stage_words;
-# 	my $stage_magic = $hash_ref->{$key}->{'Stage (in Magic)'};
-# 	if ($stage_magic) {
-# 		print "Stage (in Magic)\t$stage_magic\n";
-# 		push @stage_words => $stage_magic;
-# 	}
-# 	my $stage_zhenxia = $hash_ref->{$key}->{'Stage in Zhenxia'};
-# 	if ($stage_zhenxia) {
-# 		print "Stage in Zhenxia\t$stage_zhenxia\n";
-# 		push @stage_words => $stage_zhenxia;
+# Main classifying algorithm. Hold on to your butts.
+# Iterate through our main metadata hash.
+foreach my $key (sort keys %metadata_hash) {
+	foreach my $subkey (keys $metadata_hash{$key}) { # Iterate through each SRR entry.
+		my $entry_to_query = $metadata_hash{$key}{$subkey}; # The final query ($subkey is the category name)
+		if (!('none' ~~ @{$cat_HoA{$subkey}})) { # If our category is not listed as "none".
+			# Our main comparison search begins here.
+			# We're at the bottom level of an entry within each category within each SRR entry.
+			foreach my $search_type (@{$cat_HoA{$subkey}}) {
+				my ($search_output, $id_output) = &main_search($entry_to_query, $search_type); # The main search.
+				&structure_the_output($subkey, $search_type, $search_output, $id_output, \%metadata_hash_output); # Sort and structure the output.
+			}
+		}
+	}
+}
 
-# 	}
-# 	my $stage_nlm = $hash_ref->{$key}->{'Selected NLM annotated stage'};
-# 	if ($stage_nlm) {
-# 		print "Selected NLM annotated stage\t$stage_nlm\n";
-# 		push @stage_words => $stage_nlm;
-# 	}
-	
-# }
-
-
-my %matched_hash; # hash for successful matches
-my %updated_hash; # hash for updated store_hash values.
-my %cv_id_hash;
 # foreach my $key (keys %store_hash) {
 # 	if ($store_hash{$key}) {
 # 		my $query = $store_hash{$key};
@@ -139,18 +141,9 @@ my %cv_id_hash;
 # 	}
 # }
 
-my %transform_hash;
-
 # Data Dumper commands for internal testing.
-# print Data::Dumper->Dump([\%count_hash], ['count_hash']);
-# print Data::Dumper->Dump([\%bt_hash], ['*bt_hash']);
-# print Data::Dumper->Dump([\%cv_hash], ['*cv_hash']);
-# print Data::Dumper->Dump([\%dv_hash], ['*dv_hash']);
-# print Data::Dumper->Dump([\%store_hash], ['*store_hash']);
-# print Data::Dumper->Dump([\%gn_hash], ['*gn_hash']);
-# print Dumper $hash_ref;
-# print Data::Dumper->Dump([\%main_hash], ['*main_hash']);
-# print Data::Dumper->Dump([\%transform_hash], ['*transform_hash']);
+# print Data::Dumper->Dump([\%metadata_hash], ['*metadata_hash']);
+# print Data::Dumper->Dump([\%cat_HoA], ['*cat_HoA']);
 
 sub parse_for_hash {
 	my $user_list = $_[0];
@@ -163,6 +156,23 @@ sub parse_for_hash {
 	close $data;	
 }
 
+sub parse_for_hash_of_arrays {
+	my $user_list = $_[0];
+	my $hash_ref = $_[1];
+
+	open(my $data, '<:encoding(utf8)', $user_list) or die "Could not open '$user_list' $!\n";
+	while (my $line = <$data>){
+		chomp($line);
+		my @array = split(/\t/, $line);
+		foreach my $entry (@array) {
+			if ($entry ne $array[0]) {
+				push @{$hash_ref->{$array[0]}} => $entry;
+			}
+		}
+	}
+	close $data;	
+}
+
 sub parse_obo {
 	my $array_ref = $_[0];
 	my $hash_ref = $_[1];
@@ -172,4 +182,100 @@ sub parse_obo {
 		my $id = $entry->id();
 		$hash_ref->{$id} = $name;
 	}
+}
+
+sub main_search {
+	my $entry_to_query = $_[0];
+	my $search_type = $_[1];
+	my ($search_output, $id_output);
+
+	# Sending out the queries to the relevant subroutines.
+	if ($search_type eq "sample_type") {
+		($search_output, $id_output) = &sample_type_search;
+	} elsif ($search_type eq "stage") {
+		($search_output, $id_output) = &stage_search;
+	} elsif ($search_type eq "tissue") {
+		($search_output, $id_output) = &tissue_search;
+	} elsif ($search_type eq "cell_line") {
+		($search_output, $id_output) = &cell_line_search;
+	} elsif ($search_type eq "strain") {
+		($search_output, $id_output) = &strain_search;
+	} elsif ($search_type eq "genotype") {
+		($search_output, $id_output) = &genotype_search;
+	} elsif ($search_type eq "key_genes") {
+		($search_output, $id_output) = &key_genes_search;
+	} elsif ($search_type eq "sex") {
+		($search_output, $id_output) = &sex_search;
+	}
+
+	return ($search_output, $id_output);
+}
+
+sub structure_the_output {
+	my $original_search_category = $_[0];
+	my $search_type = $_[1];
+	my $search_output = $_[2];
+	my $id = $_[3];
+	my $hash_ref = $_[4];
+
+	# Sorting the data into new categories based on the search parameters and original fields.
+	# This data is stored on the Google Doc (Reannotation Metadata) shared with the NCBI group.
+
+	if ($original_search_category eq )
+}
+
+sub sample_type_search {
+	my $search_output = "development test";
+	my $id_output = "development id";
+
+	return ($search_output, $id_output);
+}
+
+sub stage_search {
+	my $search_output = "anatomy test";
+	my $id_output = "anatomy id";
+
+	return ($search_output, $id_output);
+}
+
+sub tissue_search {
+	my $search_output = "cv test";
+	my $id_output = "cv id";
+
+	return ($search_output, $id_output);
+}
+
+sub cell_line_search {
+	my $search_output = "cell line test";
+	my $id_output = "cell line id";
+
+	return ($search_output, $id_output);
+}
+
+sub strain_search {
+	my $search_output = "gene test";
+	my $id_output = "gene id";
+
+	return ($search_output, $id_output);
+}
+
+sub genotype_search {
+	my $search_output = "strain test";
+	my $id_output = "strain id";
+
+	return ($search_output, $id_output);
+}
+
+sub key_genes_search {
+	my $search_output = "strain test";
+	my $id_output = "strain id";
+
+	return ($search_output, $id_output);
+}
+
+sub sex_search {
+	my $search_output = "strain test";
+	my $id_output = "strain id";
+
+	return ($search_output, $id_output);
 }
