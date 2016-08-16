@@ -48,6 +48,9 @@ my %metadata_hash_output;
 my %cat_HoA; # metadata catagories. This is extracted from a TSV where the first column is the titles from the metadata
 # tsv file and the second column is which controlled vocabulary or data type to search. See 'categories.tsv'.
 
+# An array of words used to indicate an unknown value in the metadata. TODO Load this from a file.
+my @empty_words = ('mix','other','unknown');
+
 # Create a new parser object.
 my $parser = OBO::Parser::OBOParser->new;
 
@@ -100,14 +103,16 @@ my $tsv_obj = Text::CSV->new ( {
 foreach my $key (sort keys %metadata_hash) {
 	foreach my $subkey (keys $metadata_hash{$key}) { # Iterate through each SRR entry.
 		my $entry_to_query = $metadata_hash{$key}{$subkey}; # The actual query ($subkey is the category name)
-		if (!('none' ~~ @{$cat_HoA{$subkey}}) && ($entry_to_query ne '')) { # If our category is not listed as "none" and our entry is not blank.
+		# If our category is not listed as "none", our entry is not blank, and it doesn't match the empty words.
+		if (!('none' ~~ @{$cat_HoA{$subkey}}) && ($entry_to_query ne '') && (!($entry_to_query ~~ @empty_words))) { 
 			# Our main comparison search begins here.
 			# We're at the bottom level of an entry within each category within each SRR entry (e.g. an entry in the original metadata tsv file).
 			# To review, $key = the SRR entry. $subkey = a column from the metadata tsv. $cat_HoA = the categories tsv file.
 			foreach my $search_type (@{$cat_HoA{$subkey}}) { # Perform a search with the query for each search type specified in the categories.tsv file (e.g. cell_line, tissue, etc.)
-				print PROUT "Searching $key\t$subkey\t$search_type\t$entry_to_query\n";
+				# print PROUT "Searching $key\t$subkey\t$search_type\t$entry_to_query\n";
 				my ($search_output, $id_output) = &main_search($entry_to_query, $search_type); # The main search.
 				if ($search_output ne "FAILED") {
+					print PROUT "Match found $key\t$subkey\t$search_type\t$entry_to_query => $search_output\t$id_output\n";
 					$successful_match_output{$search_type}{$entry_to_query} = $search_output; # Build a successful match hash to speed up future searches.
 					$successful_match_id{$search_type}{$entry_to_query} = $id_output; # Successful match hash for ids too.
 					$metadata_hash_output{$key}{$subkey}{$search_type} = $search_output; # Set the output in the output hash.
@@ -119,52 +124,13 @@ foreach my $key (sort keys %metadata_hash) {
 	}
 }
 
+# TODO
 # Consolidation algorithm.
 # Works through the main output hash and consolidates multiple entries into a single answer.
 
-# foreach my $key (keys %store_hash) {
-# 	if ($store_hash{$key}) {
-# 		my $query = $store_hash{$key};
-# 		if ($matched_hash{$query}) { # if we've already matched this term.
-# 			$updated_hash{$key} = $matched_hash{$query}; # set the value from the matched_hash.
-# 			print "$query\t$updated_hash{$key}\t$cv_id_hash{$updated_hash{$key}}\n";
-# 		} else {
-# 			foreach my $entry (keys %cv_hash) {
-# 				my $value = $cv_hash{$entry};
-# 				my $score = distance($query, $value);
-# 				if ($score < 2) {
-# 					print "$query\t$value\t$entry\n";
-# 					$matched_hash{$query} = $value;
-# 					$cv_id_hash{$value} = $entry;
-# 				}
-# 			}
-# 			foreach my $entry (keys %bt_hash) {
-# 				my $value = $bt_hash{$entry};
-# 				my $score = distance($query, $value);
-# 				if ($score < 2) {
-# 					print "$query\t$value\t$entry\n";
-# 					$matched_hash{$query} = $value;
-# 					$cv_id_hash{$value} = $entry;
-# 				}
-# 			}
-# 			foreach my $entry (keys %dv_hash) {
-# 				if ($dv_hash{$entry}) {
-# 					my $value = $dv_hash{$entry};
-# 					my $score = distance($query, $value);
-# 					if ($score < 2) {
-# 						print "$query\t$value\t$entry\n";
-# 						$matched_hash{$query} = $value;
-# 						$cv_id_hash{$value} = $entry;
-# 					}
-# 				}
-# 			}
-# 		}
-# 	}
-# }
-
 # Data Dumper commands for internal testing.
 # print Data::Dumper->Dump([\%metadata_hash], ['*metadata_hash']);
-# print Data::Dumper->Dump([\%metadata_hash_output], ['*metadata_hash_output']);
+print Data::Dumper->Dump([\%metadata_hash_output], ['*metadata_hash_output']);
 # print Data::Dumper->Dump([\%cat_HoA], ['*cat_HoA']);
 # print Data::Dumper->Dump([\%user_hash], ['*user_hash']);
 
@@ -214,7 +180,7 @@ sub main_search {
 
 	# Check for user curated entries first.
 	if ($user_hash{$entry_to_query}) {
-		print PROUT "Converted $entry_to_query => $user_hash{$entry_to_query}\n";
+		# print PROUT "Converted $entry_to_query => $user_hash{$entry_to_query}\n";
 		$entry_to_query = $user_hash{$entry_to_query};
 	}
 
@@ -222,7 +188,7 @@ sub main_search {
 	if ($successful_match_output{$search_type}{$entry_to_query}){
 		$search_output = $successful_match_output{$search_type}{$entry_to_query};
 		$id_output = $successful_match_id{$search_type}{$entry_to_query};
-		print PROUT "Previous match found for $entry_to_query.\n";
+		# print PROUT "Previous match found for $entry_to_query.\n";
 		return ($search_output, $id_output);
 	}
 
@@ -286,8 +252,21 @@ sub cell_line_search {
 	my $search_type = $_[1];
 	my ($search_output, $id_output);
 
-	$search_output = 'FAILED';
-	$id_output = 'FAILED';
+	foreach my $cell_line (keys %tc_hash) {
+		my $id = $tc_hash{$cell_line};
+		my $lc_cell_line = lc($cell_line);
+		my $lc_entry_to_query = lc($entry_to_query);
+		my $score = distance($lc_entry_to_query, $lc_cell_line);
+		if ($score < 1) {
+			$search_output = $cell_line;
+			$id_output = $id;
+			print "$entry_to_query\t$search_output\n";
+			return ($search_output, $id_output);
+		} else {
+			$search_output = 'FAILED';
+			$id_output = 'FAILED';
+		}
+	}
 
 	return ($search_output, $id_output);
 }
@@ -362,4 +341,17 @@ sub sex_search {
 
 sub consolidate_output {
 	# A subroutine to consolidate multiple results in each category into a single result.
+}
+
+sub longest_element {
+	# Taken from http://stackoverflow.com/questions/4182010/the-fastest-way-execution-time-to-find-the-longest-element-in-an-list
+    my $max = -1;
+    my $max_ref;
+    for (@_) {
+        if (length > $max) {  # no temp variable, length() twice is faster
+            $max = length;
+            $max_ref = \$_;   # avoid any copying
+        }
+    }
+    $$max_ref
 }
