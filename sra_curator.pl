@@ -16,11 +16,17 @@ use Text::CSV;
 use Text::Metaphone;
 use Text::Levenshtein qw(distance);
 
+$|++;
+
 use version; our $VERSION = qv(0.0.1);
 
 my $OUTFILE = 'output_curator.log';
 open(STDERR, "| tee -i $OUTFILE") or die "WARNING: ERROR: Cannot open output.log\n";
 open(STDOUT, "| tee -i $OUTFILE") or die "WARNING: ERROR: Cannot open output.log\n";
+
+my $profout = 'report_curator.log';
+open (PROUT,">$profout") or die "WARNING: ERROR: Cannot open report output\n";
+binmode(PROUT, ":utf8");
 
 my %store_hash = %{retrieve('extracted.results')}; # Load the extracted.results file from the sra_xml_parser.pl script.
 
@@ -32,6 +38,9 @@ our %cv_hash; # controlled vocabulary
 our %tc_hash; # cell lines
 our %gn_hash; # genes
 our %sn_hash; # strains
+
+our %successful_match_id; # A hash to keep track of previously successful match id's.
+our %successful_match_output; # Successful match outputs.
 
 # Initialize the output hash for metadata.
 my %metadata_hash_output;
@@ -65,7 +74,7 @@ my %metadata_hash = %{$metadata_hash_ref}; # dereference the hash for ease of us
 undef $metadata_hash_ref; # remove the old reference.
 
 # Initialize the user hash and Text::CSV object.
-my %user_hash;
+our %user_hash;
 my $tsv_obj = Text::CSV->new ( {
 	sep_char => "\t",
 	auto_diag => 1,
@@ -90,17 +99,28 @@ my $tsv_obj = Text::CSV->new ( {
 # Iterate through our main metadata hash.
 foreach my $key (sort keys %metadata_hash) {
 	foreach my $subkey (keys $metadata_hash{$key}) { # Iterate through each SRR entry.
-		my $entry_to_query = $metadata_hash{$key}{$subkey}; # The final query ($subkey is the category name)
-		if (!('none' ~~ @{$cat_HoA{$subkey}})) { # If our category is not listed as "none".
+		my $entry_to_query = $metadata_hash{$key}{$subkey}; # The actual query ($subkey is the category name)
+		if (!('none' ~~ @{$cat_HoA{$subkey}}) && ($entry_to_query ne '')) { # If our category is not listed as "none" and our entry is not blank.
 			# Our main comparison search begins here.
-			# We're at the bottom level of an entry within each category within each SRR entry.
-			foreach my $search_type (@{$cat_HoA{$subkey}}) {
+			# We're at the bottom level of an entry within each category within each SRR entry (e.g. an entry in the original metadata tsv file).
+			# To review, $key = the SRR entry. $subkey = a column from the metadata tsv. $cat_HoA = the categories tsv file.
+			foreach my $search_type (@{$cat_HoA{$subkey}}) { # Perform a search with the query for each search type specified in the categories.tsv file (e.g. cell_line, tissue, etc.)
+				print PROUT "Searching $key\t$subkey\t$search_type\t$entry_to_query\n";
 				my ($search_output, $id_output) = &main_search($entry_to_query, $search_type); # The main search.
-				&structure_the_output($subkey, $search_type, $search_output, $id_output, \%metadata_hash_output); # Sort and structure the output.
+				if ($search_output ne "FAILED") {
+					$successful_match_output{$search_type}{$entry_to_query} = $search_output; # Build a successful match hash to speed up future searches.
+					$successful_match_id{$search_type}{$entry_to_query} = $id_output; # Successful match hash for ids too.
+					$metadata_hash_output{$key}{$subkey}{$search_type} = $search_output; # Set the output in the output hash.
+					my $search_type_id = $search_type . '_id';
+					$metadata_hash_output{$key}{$subkey}{$search_type_id} = $id_output; # Set the output id in the output hash.
+				}
 			}
 		}
 	}
 }
+
+# Consolidation algorithm.
+# Works through the main output hash and consolidates multiple entries into a single answer.
 
 # foreach my $key (keys %store_hash) {
 # 	if ($store_hash{$key}) {
@@ -144,14 +164,16 @@ foreach my $key (sort keys %metadata_hash) {
 
 # Data Dumper commands for internal testing.
 # print Data::Dumper->Dump([\%metadata_hash], ['*metadata_hash']);
+# print Data::Dumper->Dump([\%metadata_hash_output], ['*metadata_hash_output']);
 # print Data::Dumper->Dump([\%cat_HoA], ['*cat_HoA']);
+# print Data::Dumper->Dump([\%user_hash], ['*user_hash']);
 
 sub parse_for_hash {
 	my $user_list = $_[0];
 	my $hash_ref = $_[1];
 
 	open(my $data, '<:encoding(utf8)', $user_list) or die "Could not open '$user_list' $!\n";
-	while (my $fields = $tsv_obj->getline( $data )) {
+	while (my $fields = $tsv_obj->getline( $data )) { # Why does tsv_obj work here if we don't explicitly pass it? TODO google it.
 			$hash_ref->{$fields->[0]} = $fields->[1]; # Parse the two columns of the user list into a hash.
 		}
 	close $data;	
@@ -190,93 +212,154 @@ sub main_search {
 	my $search_type = $_[1];
 	my ($search_output, $id_output);
 
+	# Check for user curated entries first.
+	if ($user_hash{$entry_to_query}) {
+		print PROUT "Converted $entry_to_query => $user_hash{$entry_to_query}\n";
+		$entry_to_query = $user_hash{$entry_to_query};
+	}
+
+	# Check for previously curated entries.
+	if ($successful_match_output{$search_type}{$entry_to_query}){
+		$search_output = $successful_match_output{$search_type}{$entry_to_query};
+		$id_output = $successful_match_id{$search_type}{$entry_to_query};
+		print PROUT "Previous match found for $entry_to_query.\n";
+		return ($search_output, $id_output);
+	}
+
 	# Sending out the queries to the relevant subroutines.
 	if ($search_type eq "sample_type") {
-		($search_output, $id_output) = &sample_type_search;
+		($search_output, $id_output) = &sample_type_search($entry_to_query, $search_type);
 	} elsif ($search_type eq "stage") {
-		($search_output, $id_output) = &stage_search;
+		($search_output, $id_output) = &stage_search($entry_to_query, $search_type);
 	} elsif ($search_type eq "tissue") {
-		($search_output, $id_output) = &tissue_search;
+		($search_output, $id_output) = &tissue_search($entry_to_query, $search_type);
 	} elsif ($search_type eq "cell_line") {
-		($search_output, $id_output) = &cell_line_search;
+		($search_output, $id_output) = &cell_line_search($entry_to_query, $search_type);
 	} elsif ($search_type eq "strain") {
-		($search_output, $id_output) = &strain_search;
+		($search_output, $id_output) = &strain_search($entry_to_query, $search_type);
 	} elsif ($search_type eq "genotype") {
-		($search_output, $id_output) = &genotype_search;
+		($search_output, $id_output) = &genotype_search($entry_to_query, $search_type);
 	} elsif ($search_type eq "key_genes") {
-		($search_output, $id_output) = &key_genes_search;
+		($search_output, $id_output) = &key_genes_search($entry_to_query, $search_type);
 	} elsif ($search_type eq "sex") {
-		($search_output, $id_output) = &sex_search;
+		($search_output, $id_output) = &sex_search($entry_to_query, $search_type);
 	}
 
 	return ($search_output, $id_output);
 }
 
-sub structure_the_output {
-	my $original_search_category = $_[0];
-	my $search_type = $_[1];
-	my $search_output = $_[2];
-	my $id = $_[3];
-	my $hash_ref = $_[4];
-
-	# Sorting the data into new categories based on the search parameters and original fields.
-	# This data is stored on the Google Doc (Reannotation Metadata) shared with the NCBI group.
-
-	if ($original_search_category eq )
-}
-
 sub sample_type_search {
-	my $search_output = "development test";
-	my $id_output = "development id";
+	my $entry_to_query = $_[0];
+	my $search_type = $_[1];
+	my ($search_output, $id_output);
+
+	$search_output = 'FAILED';
+	$id_output = 'FAILED';
 
 	return ($search_output, $id_output);
 }
 
 sub stage_search {
-	my $search_output = "stage test";
-	my $id_output = "stage id";
+	my $entry_to_query = $_[0];
+	my $search_type = $_[1];
+	my ($search_output, $id_output);
+
+	$search_output = 'FAILED';
+	$id_output = 'FAILED';
 
 	return ($search_output, $id_output);
 }
 
 sub tissue_search {
-	my $search_output = "tissue test";
-	my $id_output = "tissue id";
+	my $entry_to_query = $_[0];
+	my $search_type = $_[1];
+	my ($search_output, $id_output);
+
+	$search_output = 'FAILED';
+	$id_output = 'FAILED';
 
 	return ($search_output, $id_output);
 }
 
 sub cell_line_search {
-	my $search_output = "cell line test";
-	my $id_output = "cell line id";
+	my $entry_to_query = $_[0];
+	my $search_type = $_[1];
+	my ($search_output, $id_output);
+
+	$search_output = 'FAILED';
+	$id_output = 'FAILED';
 
 	return ($search_output, $id_output);
 }
 
 sub strain_search {
-	my $search_output = "strain test";
-	my $id_output = "strain id";
+	my $entry_to_query = $_[0];
+	my $search_type = $_[1];
+	my ($search_output, $id_output);
+
+	$search_output = 'FAILED';
+	$id_output = 'FAILED';
 
 	return ($search_output, $id_output);
 }
 
 sub genotype_search {
-	my $search_output = "genotype test";
-	my $id_output = "genotype id";
+	my $entry_to_query = $_[0];
+	my $search_type = $_[1];
+	my ($search_output, $id_output);
+
+	$search_output = 'FAILED';
+	$id_output = 'FAILED';
 
 	return ($search_output, $id_output);
 }
 
 sub key_genes_search {
-	my $search_output = "key_genes test";
-	my $id_output = "key_genes id";
+	my $entry_to_query = $_[0];
+	my $search_type = $_[1];
+	my ($search_output, $id_output);
+
+	$search_output = 'FAILED';
+	$id_output = 'FAILED';
 
 	return ($search_output, $id_output);
 }
 
 sub sex_search {
-	my $search_output = "sex test";
-	my $id_output = "sex id";
+	my $entry_to_query = $_[0];
+	my $search_type = $_[1];
+	my ($search_output, $id_output);
 
+	# This is one of the most straightfoward searches. At least we hope.
+	# TODO 
+	# Separate query into individual words and search for male/female or equivalent.
+
+	$entry_to_query = lc($entry_to_query); # change to lower case.
+	if ($entry_to_query eq 'male' || $entry_to_query eq 'm') {
+		$search_output = 'male';
+		$id_output = 'FBcv:0000333';
+	} elsif ($entry_to_query eq 'female' || $entry_to_query eq 'f') {
+		$search_output = 'female';
+		$id_output = 'FBcv:0000334';
+	} elsif ($entry_to_query eq 'mated male' || $entry_to_query eq 'mated_male' || $entry_to_query eq 'mated-male') {
+		$search_output = 'mated male';
+		$id_output = 'FBcv:0000729';
+	} elsif ($entry_to_query eq 'mated female' || $entry_to_query eq 'mated_female' || $entry_to_query eq 'mated-female') {
+		$search_output = 'mated female';
+		$id_output = 'FBcv:0000727';
+	} elsif ($entry_to_query eq 'virgin male' || $entry_to_query eq 'virgin_male' || $entry_to_query eq 'virgin-male') {
+		$search_output = 'virgin male';
+		$id_output = 'FBcv:0000728';
+	} elsif ($entry_to_query eq 'virgin female' || $entry_to_query eq 'virgin_female' || $entry_to_query eq 'virgin-female') {
+		$search_output = 'virgin female';
+		$id_output = 'FBcv:0000726';
+	} else {
+		$search_output = 'FAILED';
+		$id_output = 'FAILED';
+	}
 	return ($search_output, $id_output);
+}
+
+sub consolidate_output {
+	# A subroutine to consolidate multiple results in each category into a single result.
 }

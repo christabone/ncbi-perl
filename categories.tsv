@@ -1,0 +1,29 @@
+RunSRR	none
+Project ID	none
+Project brief description	none
+Pubmed ID	none
+Publication title	key_genes
+citation	none
+Author and Center name (collated by Magic)	none
+Sample description, generated automatically by Magic	none
+Stage (in Magic)	stage
+details column J	stage
+Tissue (in Magic)	sample_type	tissue
+type column L	cell_line	stage
+details column M	cell_line	tissue
+System	none
+type column O	none
+details column P	none
+control or treatment or phenotype	none
+details column R	strain	genotype	key_genes
+Sex in Magic	sex
+Sex in Zhenxia	sex
+Stage in Zhenxia	stage
+Tissue in ZhenXia	tissue
+Genotype in Zhenxia	genotype	strain	cell_line
+Cell type in Zhenxia	cell_line
+Sample type in ZhenXia	sample_type	tissue
+Center name in Zhenxia	none
+Selected NLM annotated stage	stage
+Selected NLM annotated Cell type and anatomy	cell_line	tissue
+Selected NLM-annotated strain, treatment or note	cell_line	strain
