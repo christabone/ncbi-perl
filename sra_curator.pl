@@ -16,6 +16,8 @@ use Text::CSV;
 use Text::Metaphone;
 use Text::Levenshtein qw(distance);
 
+require '/users/ctabone/Programming/git/ncbi-perl/sra_curator_support.pm';
+
 $|++;
 
 use version; our $VERSION = qv(0.0.1);
@@ -98,39 +100,55 @@ my $tsv_obj = Text::CSV->new ( {
 &parse_obo(\@bt_terms, \%bt_hash); # anatomy.
 &parse_obo(\@cv_terms, \%cv_hash); # controlled vocabulary.
 
-# Main classifying algorithm. Hold on to your butts.
-# Iterate through our main metadata hash.
+my @object_array;
+
+# Storing all metadata as objects.
 foreach my $key (sort keys %metadata_hash) {
-	foreach my $subkey (keys $metadata_hash{$key}) { # Iterate through each SRR entry.
-		my $entry_to_query = $metadata_hash{$key}{$subkey}; # The actual query ($subkey is the category name)
+	my $objectkey = sra_curator_support->new($key);
+	foreach my $subkey (keys $metadata_hash{$key}) {
+		$objectkey->set_old_metadata($subkey, $metadata_hash{$key}{$subkey});
+	}
+	push @object_array => $objectkey;
+}
+
+# Main classifying algorithm. Hold on to your butts.
+# Iterate through our objects.
+foreach my $object (@object_array) { # Load an object. 
+	my $object_hash_ref = $object->get_entire_old_metadata(); # Pull out the old metadata for that object.
+	foreach my $key (keys % {$object_hash_ref}) { # For each column title for an object.
+		my $query = $object_hash_ref -> {$key}; # Get the value, this is the actual query to use. 
+		if (!('none' ~~ @{$cat_HoA{$key}}) && ($query ne '') && (!($query ~~ @empty_words))) {
 		# If our category is not listed as "none", our entry is not blank, and it doesn't match the empty words.
-		if (!('none' ~~ @{$cat_HoA{$subkey}}) && ($entry_to_query ne '') && (!($entry_to_query ~~ @empty_words))) { 
-			# Our main comparison search begins here.
-			# We're at the bottom level of an entry within each category within each SRR entry (e.g. an entry in the original metadata tsv file).
-			# To review, $key = the SRR entry. $subkey = a column from the metadata tsv. $cat_HoA = the categories tsv file.
-			foreach my $search_type (@{$cat_HoA{$subkey}}) { # Perform a search with the query for each search type specified in the categories.tsv file (e.g. cell_line, tissue, etc.)
-				# print PROUT "Searching $key\t$subkey\t$search_type\t$entry_to_query\n";
-				my ($search_output, $id_output) = &main_search($entry_to_query, $search_type); # The main search.
+			foreach my $search_type (@{$cat_HoA{$key}}) { # Perform a search with the query for each search type specified in the categories.tsv file (e.g. cell_line, tissue, etc.)
+				my ($search_output, $id_output) = &main_search($query, $search_type); # The main search.
+				# Once the search is returned, we need to store it in a more complicated manner.
+				# We need to sort by search_type and further by the original column header.
+				# This is because we need to resolve the results further (i.e. if 3 answers come back for cell_line via 3 searches, which is best?).
+				$object->store_new_results($search_type, $key, $search_output, $id_output);
 				if ($search_output ne "FAILED") {
-					print PROUT "Match found $key\t$subkey\t$search_type\t$entry_to_query => $search_output\t$id_output\n";
-					$successful_match_output{$search_type}{$entry_to_query} = $search_output; # Build a successful match hash to speed up future searches.
-					$successful_match_id{$search_type}{$entry_to_query} = $id_output; # Successful match hash for ids too.
-					$metadata_hash_output{$key}{$subkey}{$search_type} = $search_output; # Set the output in the output hash.
-					my $search_type_id = $search_type . '_id';
-					$metadata_hash_output{$key}{$subkey}{$search_type_id} = $id_output; # Set the output id in the output hash.
+					$successful_match_output{$search_type}{$query} = $search_output; # Build a successful match hash to speed up future searches.
+					$successful_match_id{$search_type}{$query} = $id_output; # Successful match hash for ids too.
 				}
-			}
+			}	
 		}
 	}
 }
 
 # TODO
-# Consolidation algorithm.
+# Reconciliation algorithm.
 # Works through the main output hash and consolidates multiple entries into a single answer.
+# foreach my $object (@object_array) { # Load an object. 
+# 	my $array_ref = $object->get_new_results('sex_id');
+# 	foreach my $hash_ref (@{$array_ref}) {
+#     	while ( my ($key, $value) = each(%$hash_ref) ) {
+#         	print "$key => $value\n";
+#     	}
+# 	}
+# }
 
 # Data Dumper commands for internal testing.
 # print Data::Dumper->Dump([\%metadata_hash], ['*metadata_hash']);
-print Data::Dumper->Dump([\%metadata_hash_output], ['*metadata_hash_output']);
+# print Data::Dumper->Dump([\%metadata_hash_output], ['*metadata_hash_output']);
 # print Data::Dumper->Dump([\%cat_HoA], ['*cat_HoA']);
 # print Data::Dumper->Dump([\%user_hash], ['*user_hash']);
 
