@@ -10,26 +10,31 @@ sub new {
     my $self = {
         Input => $name,
         OldMetaData => {},
-        key_genes => [{}],
-        stage => [{}],
-        sample_type => [{}],
-        tissue => [{}],
-        cell_line => [{}],
-        sex => [{}],
-        strain => [{}],
-        genotype => [{}],
-        key_genes_ids => [{}],
-        stage_ids => [{}],
-        sample_type_ids => [{}],
-        tissue_ids => [{}],
-        cell_line_ids => [{}],
-        sex_ids => [{}],
-        strain_ids => [{}],
-        genotype_ids => [{}],
+        key_genes => {},
+        stage => {},
+        sample_type => {},
+        tissue => {},
+        cell_line => {},
+        sex => {},
+        strain => {},
+        genotype => {},
+        key_genes_ids => {},
+        stage_ids => {},
+        sample_type_ids => {},
+        tissue_ids => {},
+        cell_line_ids => {},
+        sex_ids => {},
+        strain_ids => {},
+        genotype_ids => {},
         NewCategories => {}
     };
     bless ($self, $class);
     return $self;
+}
+
+sub get_accession {
+	my ($self) = @_;
+	$self->{Input};
 }
 
 sub set_old_metadata {
@@ -40,10 +45,12 @@ sub set_old_metadata {
 sub store_new_results {
 	my ($self, $search_type, $column_header, $output, $id_output) = @_;
 	my $search_type_id = $search_type . '_id';
-	my $storage_hash_ref = { $column_header => $output}; # Create the hash_refs to be stored in the AoH.
-	my $storage_id_hash_ref = { $column_header => $id_output}; # Create the hash_refs to be stored in the AoH.
-	push @{$self->{$search_type}} => $storage_hash_ref; # Store the hash_ref in the appropriate search type array.
-	push @{$self->{$search_type_id}} => $storage_id_hash_ref; # Store the hash_ref in the appropriate search type array.
+	$self->{$search_type}{$column_header} = $output;
+	$self->{$search_type_id}{$column_header} = $id_output;
+	# my $storage_hash_ref = { $column_header => $output}; # Create the hash_refs to be stored in the AoH.
+	# my $storage_id_hash_ref = { $column_header => $id_output}; # Create the hash_refs to be stored in the AoH.
+	# push @{$self->{$search_type}} => $storage_hash_ref; # Store the hash_ref in the appropriate search type array.
+	# push @{$self->{$search_type_id}} => $storage_id_hash_ref; # Store the hash_ref in the appropriate search type array.
 }
 
 sub get_new_results {

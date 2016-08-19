@@ -14,7 +14,7 @@ use OBO::Parser::OBOParser;
 use Text::CSV::Hashify;
 use Text::CSV;
 use Text::Metaphone;
-use Text::Levenshtein qw(distance);
+use Text::Levenshtein::XS qw(distance);
 
 require '/users/ctabone/Programming/git/ncbi-perl/sra_curator_support.pm';
 
@@ -41,8 +41,13 @@ our %tc_hash; # cell lines
 our %gn_hash; # genes
 our %sn_hash; # strains
 
+our %statistics; # Tracking match statistics.
+
+our $skip_searches = 0; # For testing sorting and other late algorithms.
+
 our %successful_match_id; # A hash to keep track of previously successful match id's.
 our %successful_match_output; # Successful match outputs.
+our %failed_match_output; # A hash to keep track of failed match attempts.
 
 # Initialize the output hash for metadata.
 my %metadata_hash_output;
@@ -79,7 +84,7 @@ my %metadata_hash = %{$metadata_hash_ref}; # dereference the hash for ease of us
 undef $metadata_hash_ref; # remove the old reference.
 
 # Initialize the user hash and Text::CSV object.
-our %user_hash;
+our %dictionary_HoH;
 my $tsv_obj = Text::CSV->new ( {
 	sep_char => "\t",
 	auto_diag => 1,
@@ -87,13 +92,15 @@ my $tsv_obj = Text::CSV->new ( {
 });
 
 # Load various tsv lists into hashes using a subroutine.
-&parse_for_hash('user_curation.tsv', \%user_hash); # user curated entries.
 &parse_for_hash('cell_lines.tsv', \%tc_hash); # cell lines.
 &parse_for_hash('genes.tsv', \%gn_hash); # genes.
 &parse_for_hash('strains.tsv', \%sn_hash); # strains.
 
 # Load the categories file into a HoA.
 &parse_for_hash_of_arrays('categories.tsv', \%cat_HoA); # categories for metadata.
+
+# Load the dictionary file into a HoH.
+&parse_for_hash_of_hashes('curation_dictionary.tsv', \%dictionary_HoH); # user curated entries.
 
 # Parse the OBO objects in the array and extract name/id information. Store into a hash.
 &parse_obo(\@dv_terms, \%dv_hash); # development.
@@ -120,14 +127,18 @@ foreach my $object (@object_array) { # Load an object.
 		if (!('none' ~~ @{$cat_HoA{$key}}) && ($query ne '') && (!($query ~~ @empty_words))) {
 		# If our category is not listed as "none", our entry is not blank, and it doesn't match the empty words.
 			foreach my $search_type (@{$cat_HoA{$key}}) { # Perform a search with the query for each search type specified in the categories.tsv file (e.g. cell_line, tissue, etc.)
-				my ($search_output, $id_output) = &main_search($query, $search_type); # The main search.
-				# Once the search is returned, we need to store it in a more complicated manner.
-				# We need to sort by search_type and further by the original column header.
-				# This is because we need to resolve the results further (i.e. if 3 answers come back for cell_line via 3 searches, which is best?).
-				$object->store_new_results($search_type, $key, $search_output, $id_output);
-				if ($search_output ne "FAILED") {
-					$successful_match_output{$search_type}{$query} = $search_output; # Build a successful match hash to speed up future searches.
-					$successful_match_id{$search_type}{$query} = $id_output; # Successful match hash for ids too.
+				if (!($failed_match_output{$search_type}{$query})) { # If it's failed before, we skip the search - hugely important, speeds up everything significantly.
+					my ($search_output, $id_output) = &main_search($query, $search_type); # The main search.
+					# Once the search is returned, we need to store it in a more complicated manner.
+					# We need to sort by search_type and further by the original column header.
+					# This is because we need to resolve the results further (i.e. if 3 answers come back for cell_line via 3 searches, which is best?).
+					$object->store_new_results($search_type, $key, $search_output, $id_output);
+					if ($search_output ne "FAILED") {
+						$successful_match_output{$search_type}{$query} = $search_output; # Build a successful match hash to speed up future searches.
+						$successful_match_id{$search_type}{$query} = $id_output; # Successful match hash for ids too.
+					} else {
+						$failed_match_output{$search_type}{$query}++;
+					}
 				}
 			}	
 		}
@@ -135,22 +146,75 @@ foreach my $object (@object_array) { # Load an object.
 }
 
 # TODO
-# Reconciliation algorithm.
-# Works through the main output hash and consolidates multiple entries into a single answer.
-# foreach my $object (@object_array) { # Load an object. 
-# 	my $array_ref = $object->get_new_results('sex_id');
-# 	foreach my $hash_ref (@{$array_ref}) {
-#     	while ( my ($key, $value) = each(%$hash_ref) ) {
-#         	print "$key => $value\n";
-#     	}
-# 	}
-# }
+# Reconciliation algorithm. 
+foreach my $object (@object_array) { # Load an object.
+	my $hash_ref = $object->get_new_results('sex_id'); # Get all the sex_id results for that object.
+	my $number_of_keys = scalar (keys %{$hash_ref}); # Get all the keys for the id results (the keys are the column names that were searched for 'sex').
+	if ($number_of_keys != 0) { # If the number of keys are not empty. In other words, only compute results were sex was searched.
+		my %check_hash; # Create a hash to check the results between different between columns.
+		foreach my $key (keys %{$hash_ref}) {
+			my $output_id = $hash_ref->{$key}; # Grab the output_id from the search.
+			$check_hash{$output_id}++; # Store the sex_id in the check_hash.
+		}
+		# Count the number of different sex_id numbers we stored in the check_hash.
+		# This is the most important part of the check, so it warrants an explanantion.
+		# We're basically grabbing all the id's that have been assigned to each column from the table for a certain trait (e.g. sex).
+		# If all the id's are the same, then when you put them in a hash table, they all create one key.
+		# If the id's are different, then you'll get more than one key created, and you'll have a discrepency that needs to be resolved.
+		if ((scalar keys %check_hash) == 1) { 
+			$statistics{'sex_id'}{'successful'}++;
+		} else {
+			$statistics{'sex_id'}{'failed'}++;
+			my $accession = $object->get_accession();
+			foreach my $key (keys %{$hash_ref}) {
+				print "FAILED for sex_id =>\t$accession\t$key\t$hash_ref->{$key}\n";
+			}
+		}
+		# print Data::Dumper->Dump([\%check_hash], ['*check_hash']);
+	}
+}
+
+# Print statistics
+print "\nSex\n";
+print "-----\n";
+my $sex_successful = $statistics{'sex_id'}{'successful'}++;
+print "Successful: $sex_successful\n";
+my $sex_failed = $statistics{'sex_id'}{'failed'}++;
+print "Failed: $sex_failed\n";
+my $sex_percentage = ($sex_successful/($sex_successful+$sex_failed)) * 100;
+print "Percentage: ";
+printf("%.2f", $sex_percentage);
+print "\n\n";
+
+# print "Cell line\n";
+# print "-----\n";
+# my $cl_successful = $statistics{'cell_line'}{'successful'}++;
+# print "Successful: $cl_successful\n";
+# my $cl_failed = $statistics{'cell_line'}{'failed'}++;
+# print "Failed: $cl_failed\n";
+# my $cl_percentage = ($cl_successful/($cl_successful+$cl_failed)) * 100;
+# print "Percentage: ";
+# printf("%.2f", $cl_percentage);
+# print "\n\n";
+
+# print "Stage\n";
+# print "-----\n";
+# my $stage_successful = $statistics{'stage'}{'successful'}++;
+# print "Successful: $stage_successful\n";
+# my $stage_failed = $statistics{'stage'}{'failed'}++;
+# print "Failed: $stage_failed\n";
+# my $stage_percentage = ($stage_successful/($stage_successful+$stage_failed)) * 100;
+# print "Percentage: ";
+# printf("%.2f", $stage_percentage);
+# print "\n\n";
 
 # Data Dumper commands for internal testing.
 # print Data::Dumper->Dump([\%metadata_hash], ['*metadata_hash']);
 # print Data::Dumper->Dump([\%metadata_hash_output], ['*metadata_hash_output']);
 # print Data::Dumper->Dump([\%cat_HoA], ['*cat_HoA']);
-# print Data::Dumper->Dump([\%user_hash], ['*user_hash']);
+# print Data::Dumper->Dump([\%dv_hash], ['*dv_hash']);
+# print Data::Dumper->Dump([\%statistics], ['*statistics']);
+# print Data::Dumper->Dump([\%successful_match_output], ['*successful_match_output']);
 
 sub parse_for_hash {
 	my $user_list = $_[0];
@@ -180,6 +244,17 @@ sub parse_for_hash_of_arrays {
 	close $data;	
 }
 
+sub parse_for_hash_of_hashes {
+	my $user_list = $_[0];
+	my $hash_ref = $_[1];
+
+	open(my $data, '<:encoding(utf8)', $user_list) or die "Could not open '$user_list' $!\n";
+	while (my $fields = $tsv_obj->getline( $data )) { # Why does tsv_obj work here if we don't explicitly pass it? TODO google it.
+			$hash_ref->{$fields->[0]}{$fields->[1]} = $fields->[2]; # Parse the two columns of the user list into a hash.
+		}
+	close $data;	
+}
+
 sub parse_obo {
 	my $array_ref = $_[0];
 	my $hash_ref = $_[1];
@@ -187,27 +262,34 @@ sub parse_obo {
 	foreach my $entry (@$array_ref) { 
 		my $name = $entry->name();
 		my $id = $entry->id();
-		$hash_ref->{$id} = $name;
+		$hash_ref->{$name} = $id;
 	}
 }
 
 sub main_search {
-	my $entry_to_query = $_[0];
+	my $entry_to_query = $_[0]; # Used for the search, may be altered by the dictionary check.
+	my $original_entry = $_[0]; # Used for the previously curated entry search. Not modified by dictionary check.
 	my $search_type = $_[1];
 	my ($search_output, $id_output);
 
-	# Check for user curated entries first.
-	if ($user_hash{$entry_to_query}) {
-		# print PROUT "Converted $entry_to_query => $user_hash{$entry_to_query}\n";
-		$entry_to_query = $user_hash{$entry_to_query};
+	# Skip all searches and return now.
+	if ($skip_searches == 1){
+		my ($search_output, $id_output) = "FAILED";
+		return ($search_output, $id_output);
 	}
 
 	# Check for previously curated entries.
-	if ($successful_match_output{$search_type}{$entry_to_query}){
-		$search_output = $successful_match_output{$search_type}{$entry_to_query};
-		$id_output = $successful_match_id{$search_type}{$entry_to_query};
-		# print PROUT "Previous match found for $entry_to_query.\n";
+	if (exists $successful_match_output{$search_type}{$original_entry}){
+		$search_output = $successful_match_output{$search_type}{$original_entry};
+		$id_output = $successful_match_id{$search_type}{$original_entry};
+		# print "Previous match found for $entry_to_query.\n";
 		return ($search_output, $id_output);
+	}
+
+	# Check for user dictionary entries.
+	if ($dictionary_HoH{$search_type}->{$entry_to_query}) {
+		# print "Converted $entry_to_query => $dictionary_HoH{$search_type}->{$entry_to_query}\n";
+		$entry_to_query = $dictionary_HoH{$search_type}->{$entry_to_query};
 	}
 
 	# Sending out the queries to the relevant subroutines.
@@ -248,8 +330,23 @@ sub stage_search {
 	my $search_type = $_[1];
 	my ($search_output, $id_output);
 
-	$search_output = 'FAILED';
-	$id_output = 'FAILED';
+	# foreach my $stage (keys %dv_hash) {
+	# 	my $id = $dv_hash{$stage};
+	# 	my $lc_stage = lc($stage);
+	# 	my $lc_entry_to_query = lc($entry_to_query);
+	# 	my $score = distance($lc_entry_to_query, $lc_stage);
+	# 	if ($score < 1) {
+	# 		$search_output = $stage;
+	# 		$id_output = $id;
+	# 		print "$entry_to_query\t$search_output\n";
+	# 		return ($search_output, $id_output);
+	# 	} else {
+	# 		$search_output = 'FAILED';
+	# 		$id_output = 'FAILED';
+	# 	}
+	# }
+$search_output = 'FAILED';
+$id_output = 'FAILED';
 
 	return ($search_output, $id_output);
 }
@@ -270,21 +367,24 @@ sub cell_line_search {
 	my $search_type = $_[1];
 	my ($search_output, $id_output);
 
-	foreach my $cell_line (keys %tc_hash) {
-		my $id = $tc_hash{$cell_line};
-		my $lc_cell_line = lc($cell_line);
-		my $lc_entry_to_query = lc($entry_to_query);
-		my $score = distance($lc_entry_to_query, $lc_cell_line);
-		if ($score < 1) {
-			$search_output = $cell_line;
-			$id_output = $id;
-			print "$entry_to_query\t$search_output\n";
-			return ($search_output, $id_output);
-		} else {
-			$search_output = 'FAILED';
-			$id_output = 'FAILED';
-		}
-	}
+	# foreach my $cell_line (keys %tc_hash) {
+	# 	my $id = $tc_hash{$cell_line};
+	# 	my $lc_cell_line = lc($cell_line);
+	# 	my $lc_entry_to_query = lc($entry_to_query);
+	# 	my $score = distance($lc_entry_to_query, $lc_cell_line);
+	# 	if ($score < 1) {
+	# 		$search_output = $cell_line;
+	# 		$id_output = $id;
+	# 		print "$entry_to_query\t$search_output\n";
+	# 		return ($search_output, $id_output);
+	# 	} else {
+	# 		$search_output = 'FAILED';
+	# 		$id_output = 'FAILED';
+	# 	}
+	# }
+
+ $search_output = 'FAILED';
+ $id_output = 'FAILED';
 
 	return ($search_output, $id_output);
 }
