@@ -26,7 +26,7 @@ sub new {
         sex_ids => {},
         strain_ids => {},
         genotype_ids => {},
-        NewCategories => {}
+        ConsolidatedOutput => {}
     };
     bless ($self, $class);
     return $self;
@@ -42,15 +42,18 @@ sub set_old_metadata {
 	$self->{OldMetaData}{$key} = $value;
 }
 
-sub store_new_results {
+sub set_new_results {
 	my ($self, $search_type, $column_header, $output, $id_output) = @_;
 	my $search_type_id = $search_type . '_id';
 	$self->{$search_type}{$column_header} = $output;
 	$self->{$search_type_id}{$column_header} = $id_output;
-	# my $storage_hash_ref = { $column_header => $output}; # Create the hash_refs to be stored in the AoH.
-	# my $storage_id_hash_ref = { $column_header => $id_output}; # Create the hash_refs to be stored in the AoH.
-	# push @{$self->{$search_type}} => $storage_hash_ref; # Store the hash_ref in the appropriate search type array.
-	# push @{$self->{$search_type_id}} => $storage_id_hash_ref; # Store the hash_ref in the appropriate search type array.
+}
+
+sub set_consolidated_results {
+	my ($self, $search_type, $output, $id_output) = @_;
+	my $search_type_id = $search_type . '_id';
+	$self->{ConsolidatedOutput}{$search_type} = $output;
+	$self->{ConsolidatedOutput}{$search_type_id} = $id_output;
 }
 
 sub get_new_results {

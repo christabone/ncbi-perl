@@ -33,7 +33,6 @@ binmode(PROUT, ":utf8");
 my %store_hash = %{retrieve('extracted.results')}; # Load the extracted.results file from the sra_xml_parser.pl script.
 
 # Initialize the development, anatomy, and controlled vocabulary hashes.
-# Making these global hashes to be used in subroutines.
 our %dv_hash; # development
 our %bt_hash; # anatomy
 our %cv_hash; # controlled vocabulary
@@ -132,7 +131,7 @@ foreach my $object (@object_array) { # Load an object.
 					# Once the search is returned, we need to store it in a more complicated manner.
 					# We need to sort by search_type and further by the original column header.
 					# This is because we need to resolve the results further (i.e. if 3 answers come back for cell_line via 3 searches, which is best?).
-					$object->store_new_results($search_type, $key, $search_output, $id_output);
+					$object->set_new_results($search_type, $key, $search_output, $id_output);
 					if ($search_output ne "FAILED") {
 						$successful_match_output{$search_type}{$query} = $search_output; # Build a successful match hash to speed up future searches.
 						$successful_match_id{$search_type}{$query} = $id_output; # Successful match hash for ids too.
@@ -146,67 +145,16 @@ foreach my $object (@object_array) { # Load an object.
 }
 
 # TODO
-# Reconciliation algorithm. 
+# Conciliation algorithm. 
+print "Consolidation\n";
+print "-------------\n";
 foreach my $object (@object_array) { # Load an object.
-	my $hash_ref = $object->get_new_results('sex_id'); # Get all the sex_id results for that object.
-	my $number_of_keys = scalar (keys %{$hash_ref}); # Get all the keys for the id results (the keys are the column names that were searched for 'sex').
-	if ($number_of_keys != 0) { # If the number of keys are not empty. In other words, only compute results were sex was searched.
-		my %check_hash; # Create a hash to check the results between different between columns.
-		foreach my $key (keys %{$hash_ref}) {
-			my $output_id = $hash_ref->{$key}; # Grab the output_id from the search.
-			$check_hash{$output_id}++; # Store the sex_id in the check_hash.
-		}
-		# Count the number of different sex_id numbers we stored in the check_hash.
-		# This is the most important part of the check, so it warrants an explanantion.
-		# We're basically grabbing all the id's that have been assigned to each column from the table for a certain trait (e.g. sex).
-		# If all the id's are the same, then when you put them in a hash table, they all create one key.
-		# If the id's are different, then you'll get more than one key created, and you'll have a discrepency that needs to be resolved.
-		if ((scalar keys %check_hash) == 1) { 
-			$statistics{'sex_id'}{'successful'}++;
-		} else {
-			$statistics{'sex_id'}{'failed'}++;
-			my $accession = $object->get_accession();
-			foreach my $key (keys %{$hash_ref}) {
-				print "FAILED for sex_id =>\t$accession\t$key\t$hash_ref->{$key}\n";
-			}
-		}
-		# print Data::Dumper->Dump([\%check_hash], ['*check_hash']);
-	}
+	&consolidate_output($object, 'sex_id');
+	&consolidate_output($object, 'cell_line');
 }
 
 # Print statistics
-print "\nSex\n";
-print "-----\n";
-my $sex_successful = $statistics{'sex_id'}{'successful'}++;
-print "Successful: $sex_successful\n";
-my $sex_failed = $statistics{'sex_id'}{'failed'}++;
-print "Failed: $sex_failed\n";
-my $sex_percentage = ($sex_successful/($sex_successful+$sex_failed)) * 100;
-print "Percentage: ";
-printf("%.2f", $sex_percentage);
-print "\n\n";
-
-# print "Cell line\n";
-# print "-----\n";
-# my $cl_successful = $statistics{'cell_line'}{'successful'}++;
-# print "Successful: $cl_successful\n";
-# my $cl_failed = $statistics{'cell_line'}{'failed'}++;
-# print "Failed: $cl_failed\n";
-# my $cl_percentage = ($cl_successful/($cl_successful+$cl_failed)) * 100;
-# print "Percentage: ";
-# printf("%.2f", $cl_percentage);
-# print "\n\n";
-
-# print "Stage\n";
-# print "-----\n";
-# my $stage_successful = $statistics{'stage'}{'successful'}++;
-# print "Successful: $stage_successful\n";
-# my $stage_failed = $statistics{'stage'}{'failed'}++;
-# print "Failed: $stage_failed\n";
-# my $stage_percentage = ($stage_successful/($stage_successful+$stage_failed)) * 100;
-# print "Percentage: ";
-# printf("%.2f", $stage_percentage);
-# print "\n\n";
+&statistics('sex_id');
 
 # Data Dumper commands for internal testing.
 # print Data::Dumper->Dump([\%metadata_hash], ['*metadata_hash']);
@@ -367,21 +315,21 @@ sub cell_line_search {
 	my $search_type = $_[1];
 	my ($search_output, $id_output);
 
-	# foreach my $cell_line (keys %tc_hash) {
-	# 	my $id = $tc_hash{$cell_line};
-	# 	my $lc_cell_line = lc($cell_line);
-	# 	my $lc_entry_to_query = lc($entry_to_query);
-	# 	my $score = distance($lc_entry_to_query, $lc_cell_line);
-	# 	if ($score < 1) {
-	# 		$search_output = $cell_line;
-	# 		$id_output = $id;
-	# 		print "$entry_to_query\t$search_output\n";
-	# 		return ($search_output, $id_output);
-	# 	} else {
-	# 		$search_output = 'FAILED';
-	# 		$id_output = 'FAILED';
-	# 	}
-	# }
+	foreach my $cell_line (keys %tc_hash) {
+		my $id = $tc_hash{$cell_line};
+		my $lc_cell_line = lc($cell_line);
+		my $lc_entry_to_query = lc($entry_to_query);
+		my $score = distance($lc_entry_to_query, $lc_cell_line);
+		if ($score < 1) {
+			$search_output = $cell_line;
+			$id_output = $id;
+			print "$entry_to_query\t$search_output\n";
+			return ($search_output, $id_output);
+		} else {
+			$search_output = 'FAILED';
+			$id_output = 'FAILED';
+		}
+	}
 
  $search_output = 'FAILED';
  $id_output = 'FAILED';
@@ -458,7 +406,62 @@ sub sex_search {
 }
 
 sub consolidate_output {
-	# A subroutine to consolidate multiple results in each category into a single result.
+	my $object = $_[0];
+	my $type = $_[1];
+	my $hash_ref = $object->get_new_results($type); # Get all the sex_id results for that object.
+	my $number_of_keys = scalar (keys %{$hash_ref}); # Get all the keys for the id results (the keys are the column names that were searched for 'sex').
+	if ($number_of_keys != 0) { # If the number of keys are not empty. In other words, only compute results were sex was searched.
+		my %check_hash; # Create a hash to check the results between different between columns.
+		foreach my $key (keys %{$hash_ref}) {
+			my $output_id = $hash_ref->{$key}; # Grab the output_id from the search.
+			$check_hash{$output_id}++; # Store the sex_id in the check_hash.
+		}
+		my $check_keys = scalar (keys %check_hash);
+		# Count the number of different sex_id numbers we stored in the check_hash.
+		# This is the most important part of the check, so it warrants an explanantion.
+		# We're basically grabbing all the id's that have been assigned to each column from the table for a certain trait (e.g. sex).
+		# If all the id's are the same, then when you put them in a hash table, they all create one key.
+		# If the id's are different, then you'll get more than one key created, and you'll have a discrepency that needs to be resolved.
+		if ($check_keys == 1) { 
+			$statistics{$type}{'successful'}++;
+			my $final_output_id = keys %check_hash; # Only 1 key. This is the output_id. 
+			$object->set_consolidated_results($type, $hash_ref->{$final_output_id}, $final_output_id);
+		} elsif ($check_keys == 2) { # We have 2 categories to consolidate.
+			my $accession = $object->get_accession();
+			foreach my $entry (keys %check_hash){ # TODO Fix errors here, currently broken.
+				my $amount = $check_hash{$entry};
+				if ($amount == 2) { # If we have 2 categories, but 1 has 2 entries (meaning it's a 2:1 ratio), use the majority (in this case, 2).
+					$object->set_consolidated_results($type, $hash_ref->{$entry}, $entry);
+					print "CONSOLIDATED for $type =>\t$accession\t$hash_ref->{$entry}\t$entry\n";
+				}
+			}
+			$statistics{$type}{'failed'}++; # 
+			foreach my $key (keys %{$hash_ref}) {
+				print "FAILED for $type =>\t$accession\t$key\t$hash_ref->{$key}\n";
+			}
+			print "\n";
+		} elsif ($check_keys == 3) {
+			$statistics{$type}{'failed'}++; # 3 different results currently fail.
+ 			my $accession = $object->get_accession();
+			foreach my $key (keys %{$hash_ref}) {
+				print "FAILED for $type =>\t$accession\t$key\t$hash_ref->{$key}\n";
+			}
+		}
+	}
+}
+
+sub statistics {
+	my $type = $_[0];
+	print "\n$type\n";
+	print "-----\n";
+	my $successful = $statistics{$type}{'successful'}++;
+	print "Successful: $successful\n";
+	my $failed = $statistics{$type}{'failed'}++;
+	print "Failed: $failed\n";
+	my $percentage = ($successful/($successful+$failed)) * 100;
+	print "Percentage: ";
+	printf("%.2f", $percentage);
+	print "\n\n";
 }
 
 sub longest_element {
