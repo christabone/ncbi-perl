@@ -143,18 +143,19 @@ foreach my $object (@object_array) { # Load an object.
 		}
 	}
 }
-
-# TODO
-# Conciliation algorithm. 
+ 
 print "Consolidation\n";
 print "-------------\n";
-foreach my $object (@object_array) { # Load an object.
+foreach my $object (@object_array) { # Load an object. Consolidate via ids.
 	&consolidate_output($object, 'sex_id');
-	&consolidate_output($object, 'cell_line');
+	&consolidate_output($object, 'cell_line_id');
+	&consolidate_output($object, 'stage_id');
 }
 
 # Print statistics
 &statistics('sex_id');
+&statistics('cell_line_id');
+&statistics('stage_id');
 
 # Data Dumper commands for internal testing.
 # print Data::Dumper->Dump([\%metadata_hash], ['*metadata_hash']);
@@ -278,23 +279,21 @@ sub stage_search {
 	my $search_type = $_[1];
 	my ($search_output, $id_output);
 
-	# foreach my $stage (keys %dv_hash) {
-	# 	my $id = $dv_hash{$stage};
-	# 	my $lc_stage = lc($stage);
-	# 	my $lc_entry_to_query = lc($entry_to_query);
-	# 	my $score = distance($lc_entry_to_query, $lc_stage);
-	# 	if ($score < 1) {
-	# 		$search_output = $stage;
-	# 		$id_output = $id;
-	# 		print "$entry_to_query\t$search_output\n";
-	# 		return ($search_output, $id_output);
-	# 	} else {
-	# 		$search_output = 'FAILED';
-	# 		$id_output = 'FAILED';
-	# 	}
-	# }
-$search_output = 'FAILED';
-$id_output = 'FAILED';
+	foreach my $stage (keys %dv_hash) {
+		my $id = $dv_hash{$stage};
+		my $lc_stage = lc($stage);
+		my $lc_entry_to_query = lc($entry_to_query);
+		my $score = distance($lc_entry_to_query, $lc_stage);
+		if ($score < 1) {
+			$search_output = $stage;
+			$id_output = $id;
+			print "$entry_to_query\t$search_output\n";
+			return ($search_output, $id_output);
+		} else {
+			$search_output = 'FAILED';
+			$id_output = 'FAILED';
+		}
+	}
 
 	return ($search_output, $id_output);
 }
@@ -330,9 +329,6 @@ sub cell_line_search {
 			$id_output = 'FAILED';
 		}
 	}
-
- $search_output = 'FAILED';
- $id_output = 'FAILED';
 
 	return ($search_output, $id_output);
 }
@@ -406,45 +402,57 @@ sub sex_search {
 }
 
 sub consolidate_output {
+	# A subroutine to consolidate the output based on "majority wins" (with an exception for 'FAILED' results).
 	my $object = $_[0];
 	my $type = $_[1];
-	my $hash_ref = $object->get_new_results($type); # Get all the sex_id results for that object.
-	my $number_of_keys = scalar (keys %{$hash_ref}); # Get all the keys for the id results (the keys are the column names that were searched for 'sex').
-	if ($number_of_keys != 0) { # If the number of keys are not empty. In other words, only compute results were sex was searched.
+	my $hash_ref = $object->get_new_results($type); # Get all the id results for that object.
+	my $number_of_keys = scalar (keys %{$hash_ref}); # Get all the keys for the id results (the keys are the column names that were searched).
+	if ($number_of_keys != 0) { # If the number of keys are not empty. In other words, only compute results were the subject (e.g. sex) was searched.
 		my %check_hash; # Create a hash to check the results between different between columns.
 		foreach my $key (keys %{$hash_ref}) {
 			my $output_id = $hash_ref->{$key}; # Grab the output_id from the search.
-			$check_hash{$output_id}++; # Store the sex_id in the check_hash.
+			$check_hash{$output_id}++; # Store the id in the check_hash.
 		}
 		my $check_keys = scalar (keys %check_hash);
-		# Count the number of different sex_id numbers we stored in the check_hash.
+		# Count the number of different id numbers we stored in the check_hash.
 		# This is the most important part of the check, so it warrants an explanantion.
 		# We're basically grabbing all the id's that have been assigned to each column from the table for a certain trait (e.g. sex).
 		# If all the id's are the same, then when you put them in a hash table, they all create one key.
 		# If the id's are different, then you'll get more than one key created, and you'll have a discrepency that needs to be resolved.
+		my $accession = $object->get_accession();
 		if ($check_keys == 1) { 
-			$statistics{$type}{'successful'}++;
-			my $final_output_id = keys %check_hash; # Only 1 key. This is the output_id. 
-			$object->set_consolidated_results($type, $hash_ref->{$final_output_id}, $final_output_id);
-		} elsif ($check_keys == 2) { # We have 2 categories to consolidate.
-			my $accession = $object->get_accession();
-			foreach my $entry (keys %check_hash){ # TODO Fix errors here, currently broken.
-				my $amount = $check_hash{$entry};
-				if ($amount == 2) { # If we have 2 categories, but 1 has 2 entries (meaning it's a 2:1 ratio), use the majority (in this case, 2).
-					$object->set_consolidated_results($type, $hash_ref->{$entry}, $entry);
-					print "CONSOLIDATED for $type =>\t$accession\t$hash_ref->{$entry}\t$entry\n";
+			my $entry_value = (%check_hash)[0]; # Hash slice to grab first value of hash entry.
+			if ($entry_value eq 'FAILED'){
+				$statistics{$type}{'failed'}++;	
+			} else {
+				$statistics{$type}{'successful'}++;
+			}
+			my $final_output_id = (keys %check_hash)[0]; # Hash slice. Only 1 key. This is the output_id.
+			$object->set_consolidated_results($type, $hash_ref->{$final_output_id}, $final_output_id); # Storing the Search type, Output, and ID output.
+			print "SINGLE OUTPUT => $accession\t$type\t$final_output_id\n";
+		} elsif ($check_keys > 1) {
+			print "ATTEMPTING CONSOLIDATION for $accession $type:\n";
+			my $largest = 0;
+			my $second_largest = 0;
+			my $largest_id = "";
+			my $second_largest_id = "";
+			foreach my $entry (keys %check_hash) {
+				my $to_compare = $check_hash{$entry};
+				print "$entry\t$to_compare\n";
+				if (($entry ne 'FAILED') && ($to_compare >= $largest)){ # Importantly, we ignore cases where the entry is 'FAILED'. Otherwise a double FAILED group will take priority over a single successful group.
+					$second_largest_id = $largest_id;
+					$largest_id = $entry;
+					$second_largest = $largest;
+					$largest = $to_compare;
 				}
 			}
-			$statistics{$type}{'failed'}++; # 
-			foreach my $key (keys %{$hash_ref}) {
-				print "FAILED for $type =>\t$accession\t$key\t$hash_ref->{$key}\n";
-			}
-			print "\n";
-		} elsif ($check_keys == 3) {
-			$statistics{$type}{'failed'}++; # 3 different results currently fail.
- 			my $accession = $object->get_accession();
-			foreach my $key (keys %{$hash_ref}) {
-				print "FAILED for $type =>\t$accession\t$key\t$hash_ref->{$key}\n";
+			if ($largest == $second_largest) {
+				print "NOT CONSOLIDATED => $accession\t$type\n";
+				$statistics{$type}{'failed'}++;
+			} else {
+				my $final_output_id = $largest_id;
+				$object->set_consolidated_results($type, $hash_ref->{$final_output_id}, $final_output_id); # Storing the Search type, Output, and ID output.
+				print "CONSOLIDATED => $accession\t$type\t$final_output_id\n";	
 			}
 		}
 	}
