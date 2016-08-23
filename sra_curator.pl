@@ -150,12 +150,14 @@ foreach my $object (@object_array) { # Load an object. Consolidate via ids.
 	&consolidate_output($object, 'sex_id');
 	&consolidate_output($object, 'cell_line_id');
 	&consolidate_output($object, 'stage_id');
+	&consolidate_output($object, 'strain');
 }
 
 # Print statistics
 &statistics('sex_id');
 &statistics('cell_line_id');
 &statistics('stage_id');
+&statistics('strain');
 
 # Data Dumper commands for internal testing.
 # print Data::Dumper->Dump([\%metadata_hash], ['*metadata_hash']);
@@ -277,6 +279,7 @@ sub sample_type_search {
 sub stage_search {
 	my $entry_to_query = $_[0];
 	my $search_type = $_[1];
+	my $type = 'stage';
 	my ($search_output, $id_output);
 
 	foreach my $stage (keys %dv_hash) {
@@ -287,8 +290,12 @@ sub stage_search {
 		if ($score < 1) {
 			$search_output = $stage;
 			$id_output = $id;
-			print "$entry_to_query\t$search_output\n";
+			print PROUT "$entry_to_query\t$search_output\n";
 			return ($search_output, $id_output);
+		} elsif ($score == 2) {
+			print PROUT "CLOSE MATCH ($type, $score) FLYBASE: $stage ($lc_stage)\t QUERY: $entry_to_query ($lc_entry_to_query)\n";
+			$search_output = 'FAILED';
+			$id_output = 'FAILED';
 		} else {
 			$search_output = 'FAILED';
 			$id_output = 'FAILED';
@@ -312,6 +319,7 @@ sub tissue_search {
 sub cell_line_search {
 	my $entry_to_query = $_[0];
 	my $search_type = $_[1];
+	my $type = 'cell_line';
 	my ($search_output, $id_output);
 
 	foreach my $cell_line (keys %tc_hash) {
@@ -322,8 +330,12 @@ sub cell_line_search {
 		if ($score < 1) {
 			$search_output = $cell_line;
 			$id_output = $id;
-			print "$entry_to_query\t$search_output\n";
+			print PROUT "$entry_to_query\t$search_output\n";
 			return ($search_output, $id_output);
+		} elsif ($score == 2) {
+			print PROUT "CLOSE MATCH ($type, $score) FLYBASE: $cell_line ($lc_cell_line)\t QUERY: $entry_to_query ($lc_entry_to_query)\n";
+			$search_output = 'FAILED';
+			$id_output = 'FAILED';
 		} else {
 			$search_output = 'FAILED';
 			$id_output = 'FAILED';
@@ -336,14 +348,31 @@ sub cell_line_search {
 sub strain_search {
 	my $entry_to_query = $_[0];
 	my $search_type = $_[1];
+	my $type = 'strain';
 	my ($search_output, $id_output);
 
-	$search_output = 'FAILED';
-	$id_output = 'FAILED';
+	foreach my $strain (keys %sn_hash) {
+		my $id = $sn_hash{$strain};
+		my $lc_strain = lc($strain);
+		my $lc_entry_to_query = lc($entry_to_query);
+		my $score = distance($lc_entry_to_query, $lc_strain);
+		if ($score < 1) {
+			$search_output = $strain;
+			$id_output = $id;
+			print PROUT "$entry_to_query\t$search_output\n";
+			return ($search_output, $id_output);
+		} elsif ($score == 2) {
+			print PROUT "CLOSE MATCH ($type, $score) FLYBASE: $strain ($lc_strain)\t QUERY: $entry_to_query ($lc_entry_to_query)\n";
+			$search_output = 'FAILED';
+			$id_output = 'FAILED';
+		} else {
+			$search_output = 'FAILED';
+			$id_output = 'FAILED';
+		}
+	}
 
 	return ($search_output, $id_output);
 }
-
 sub genotype_search {
 	my $entry_to_query = $_[0];
 	my $search_type = $_[1];
@@ -429,16 +458,15 @@ sub consolidate_output {
 			}
 			my $final_output_id = (keys %check_hash)[0]; # Hash slice. Only 1 key. This is the output_id.
 			$object->set_consolidated_results($type, $hash_ref->{$final_output_id}, $final_output_id); # Storing the Search type, Output, and ID output.
-			print "SINGLE OUTPUT => $accession\t$type\t$final_output_id\n";
+			print PROUT "SINGLE OUTPUT => $accession\t$type\t$final_output_id\n";
 		} elsif ($check_keys > 1) {
-			print "ATTEMPTING CONSOLIDATION for $accession $type:\n";
+			print PROUT "ATTEMPTING CONSOLIDATION for $accession $type\n";
 			my $largest = 0;
 			my $second_largest = 0;
 			my $largest_id = "";
 			my $second_largest_id = "";
 			foreach my $entry (keys %check_hash) {
 				my $to_compare = $check_hash{$entry};
-				print "$entry\t$to_compare\n";
 				if (($entry ne 'FAILED') && ($to_compare >= $largest)){ # Importantly, we ignore cases where the entry is 'FAILED'. Otherwise a double FAILED group will take priority over a single successful group.
 					$second_largest_id = $largest_id;
 					$largest_id = $entry;
@@ -447,12 +475,12 @@ sub consolidate_output {
 				}
 			}
 			if ($largest == $second_largest) {
-				print "NOT CONSOLIDATED => $accession\t$type\n";
+				print PROUT "NOT CONSOLIDATED => $accession\t$type\t$largest_id\t$second_largest_id\n";
 				$statistics{$type}{'failed'}++;
 			} else {
 				my $final_output_id = $largest_id;
 				$object->set_consolidated_results($type, $hash_ref->{$final_output_id}, $final_output_id); # Storing the Search type, Output, and ID output.
-				print "CONSOLIDATED => $accession\t$type\t$final_output_id\n";	
+				print PROUT "CONSOLIDATED => $accession\t$type\t$final_output_id\n";	
 			}
 		}
 	}
