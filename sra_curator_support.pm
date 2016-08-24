@@ -26,7 +26,9 @@ sub new {
         sex_ids => {},
         strain_ids => {},
         genotype_ids => {},
-        ConsolidatedOutput => {}
+        ConsolidatedOutput => {},
+        MatchScores => {},
+        IsMatched => {}
     };
     bless ($self, $class);
     return $self;
@@ -35,6 +37,26 @@ sub new {
 sub get_accession {
 	my ($self) = @_;
 	$self->{Input};
+}
+
+sub set_score {
+	my ($self, $stage, $key, $value) = @_;
+	$self->{MatchScores}{$stage}{$key} = $value;
+}
+
+sub get_score {
+	my ($self, $stage) = @_;
+	$self->{MatchScores}{$stage};
+}
+
+sub get_all_scores {
+	my ($self) = @_;
+	$self->{MatchScores};
+}
+
+sub set_match {
+	my ($self, $key, $value) = @_;
+	$self->{IsMatched}{$key} = $value;
 }
 
 sub set_old_metadata {
