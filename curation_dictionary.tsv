@@ -2,4 +2,31 @@ stage	embryo	embryonic stage
 cell_line	CME W1 cl.8+	CME-W1-Cl.8+
 cell_line	CME_W1_Cl.8+	CME-W1-Cl.8+
 cell_line	S2R	S2R+
-
+strain	Canton S	Canton-S
+strain	pvr.3	PYR_3
+strain	pvr.2	PYR2
+strain	Oregon R	Oregon-R
+tissue	larve	larva
+stage	adult state	adult stage
+tissue	organsim	organism
+stage	third instar larval state	third instar larval stage
+tissue	pupal\/adult digestive system	pupal/adult digestive system
+tissue	Male accessory glands	male accessory gland
+tissue	fatbody	fat body
+tissue	embryonic\/larval fat body	embryonic/larval fat body
+tissue	embryonic\/larval salivary gland	embryonic/larval salivary gland
+tissue	embryonic\/larval digestive system	embryonic/larval digestive system
+tissue	embryonic\/larval central nervous system	embryonic/larval central nervous system
+tissue	embryonic\/larval midgut	embryonic/larval midgut
+tissue	orgism	organism
+strain	Oregon_R	Oregon-R
+cell_line	S2-DRSC1	S2-DRSC
+tissue	adult fatbody	adult fat body
+tissue	ganglia	ganglion
+cell_line	Pten_X	Pten-X
+tissue	male_accessory_gland	male accessory gland
+tissue	male accessory_gland	male accessory gland
+cell_line	fGS\/OSS	fGS/OSS
+cell_line	CME_L1	CME-L1
+cell_line	CME W2	CME-W2
+cell_line	S-2R+	S2R+

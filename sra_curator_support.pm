@@ -40,8 +40,8 @@ sub get_accession {
 }
 
 sub set_score {
-	my ($self, $stage, $key, $value) = @_;
-	$self->{MatchScores}{$stage}{$key} = $value;
+	my ($self, $stage, $key, $compare, $value) = @_;
+	$self->{MatchScores}{$stage}{$key}{$compare} = $value;
 }
 
 sub get_score {
@@ -55,8 +55,13 @@ sub get_all_scores {
 }
 
 sub set_match {
-	my ($self, $key, $value) = @_;
+	my ($self, $stage, $key, $value) = @_;
 	$self->{IsMatched}{$key} = $value;
+}
+
+sub check_if_matched {
+	my ($self, $stage, $key) = @_;
+	$self->{IsMatched}{$key};
 }
 
 sub set_old_metadata {

@@ -147,16 +147,25 @@ foreach my $object (@object_array) { # Load an object.
 print "Results to curate\n";
 print "-----------------\n";
 foreach my $object (@object_array) { # Load an object.
-	my $hash_ref = $object->get_all_scores(); # Returns a HoH to of score results. First keys are search types. Second keys are literal search terms. Final value is a score.
+	my $accession = $object->get_accession();
+	my $hash_ref = $object->get_all_scores(); # Returns a HoH to of score results. First keys are search types. Second keys are literal search terms. Third is compared value. Final value is a score.
 	if (defined $hash_ref) {
-		foreach my $type (keys %{$hash_ref}){
-			foreach my $query (keys %{$hash_ref}->{$type}) {
-				my $score = $hash_ref->{$type}{$query}; 
+		foreach my $type (keys %{$hash_ref}){ # For each search type.
+			foreach my $query (keys %{$hash_ref}->{$type}) { # For each literal search term.
+				my $has_been_matched = $object->check_if_matched($type, $query); # Find out whether this score was eventually matched.
+				if (!(defined $has_been_matched)) { # If it hasn't been matched, it may have some close matches to check for curation.
+					foreach my $compare (keys %{$hash_ref}->{$type}{$query}) {
+						my $score = $hash_ref->{$type}{$query}{$compare}; # Grab the score.
+						if ($score <= 3) {
+							print PROUT "CLOSE MATCH $accession ($type, $score) FLYBASE: $compare\t QUERY: $query\n";
+						}
+					}
+				} else {
+					# Do nothing, move onto the next entry.
+				}
 			}
 		}
 	}
-	# print Dumper $hash_ref;
-	# print "\n";
 }
 
 print "Consolidation\n";
@@ -166,6 +175,7 @@ foreach my $object (@object_array) { # Load an object. Consolidate via ids.
 	&consolidate_output($object, 'cell_line_id');
 	&consolidate_output($object, 'stage_id');
 	&consolidate_output($object, 'strain');
+	&consolidate_output($object, 'tissue');
 }
 
 # Print statistics
@@ -173,6 +183,7 @@ foreach my $object (@object_array) { # Load an object. Consolidate via ids.
 &statistics('cell_line_id');
 &statistics('stage_id');
 &statistics('strain');
+&statistics('tissue');
 
 # Data Dumper commands for internal testing.
 # print Data::Dumper->Dump([\%metadata_hash], ['*metadata_hash']);
@@ -308,10 +319,11 @@ sub stage_search {
 		if ($score == 0) {
 			$search_output = $stage;
 			$id_output = $id;
-			$object->set_score($type, $entry_to_query, $score);
+			$object->set_score($type, $entry_to_query, $stage, $score);
+			$object->set_match($type, $entry_to_query, $score); # Flag the match as a success.
 			return ($search_output, $id_output);
-		} elsif ($score == 1) {
-			# print PROUT "CLOSE MATCH ($type, $score) FLYBASE: $stage ($lc_stage)\t QUERY: $entry_to_query ($lc_entry_to_query)\n";
+		} elsif ($score == 1 || $score == 2) {
+			$object->set_score($type, $entry_to_query, $stage, $score); # Record all the failed scores for curation purposes later.
 			$search_output = 'FAILED';
 			$id_output = 'FAILED';
 		} else {
@@ -319,7 +331,6 @@ sub stage_search {
 			$id_output = 'FAILED';
 		}
 	}
-	$object->set_score($type, $entry_to_query, $score);
 	return ($search_output, $id_output);
 }
 
@@ -327,11 +338,30 @@ sub tissue_search {
 	my $entry_to_query = $_[0];
 	my $search_type = $_[1];
 	my $object = $_[2];
-	my ($search_output, $id_output);
+	my $type = 'tissue';
+	my ($search_output, $id_output, $score);
 
-	$search_output = 'FAILED';
-	$id_output = 'FAILED';
-
+	foreach my $tissue (keys %bt_hash) {
+		my $id = $bt_hash{$tissue};
+		my $lc_tissue = lc($tissue);
+		my $lc_entry_to_query = lc($entry_to_query);
+		$score = distance($lc_entry_to_query, $lc_tissue);
+		if ($score == 0) {
+			$search_output = $tissue;
+			$id_output = $id;
+			print PROUT "$entry_to_query\t$search_output\n";
+			$object->set_score($type, $entry_to_query, $tissue, $score);
+			$object->set_match($type, $entry_to_query, $score); # Flag the match as a success.
+			return ($search_output, $id_output);
+		} elsif ($score == 1 || $score == 2) {
+			$search_output = 'FAILED';
+			$id_output = 'FAILED';
+			$object->set_score($type, $entry_to_query, $tissue, $score); # Record all the failed scores for curation purposes later.
+		} else {
+			$search_output = 'FAILED';
+			$id_output = 'FAILED';
+		}
+	}
 	return ($search_output, $id_output);
 }
 
@@ -351,18 +381,18 @@ sub cell_line_search {
 			$search_output = $cell_line;
 			$id_output = $id;
 			print PROUT "$entry_to_query\t$search_output\n";
-			$object->set_score($type, $entry_to_query, $score);
+			$object->set_score($type, $entry_to_query, $cell_line, $score);
+			$object->set_match($type, $entry_to_query, $score); # Flag the match as a success.
 			return ($search_output, $id_output);
-		} elsif ($score == 1) {
-			# print PROUT "CLOSE MATCH ($type, $score) FLYBASE: $cell_line ($lc_cell_line)\t QUERY: $entry_to_query ($lc_entry_to_query)\n";
+		} elsif ($score == 1 || $score == 2) {
 			$search_output = 'FAILED';
 			$id_output = 'FAILED';
+			$object->set_score($type, $entry_to_query, $cell_line, $score); # Record all the failed scores for curation purposes later.
 		} else {
 			$search_output = 'FAILED';
 			$id_output = 'FAILED';
 		}
 	}
-	$object->set_score($type, $entry_to_query, $score);
 	return ($search_output, $id_output);
 }
 
@@ -382,18 +412,18 @@ sub strain_search {
 			$search_output = $strain;
 			$id_output = $id;
 			print PROUT "$entry_to_query\t$search_output\n";
-			$object->set_score($type, $entry_to_query, $score);
+			$object->set_score($type, $entry_to_query, $strain, $score); # Record the match.
+			$object->set_match($type, $entry_to_query, $score); # Flag the match as a success.
 			return ($search_output, $id_output);
-		} elsif ($score == 1) {
-			# print PROUT "CLOSE MATCH ($type, $score) FLYBASE: $strain ($lc_strain)\t QUERY: $entry_to_query ($lc_entry_to_query)\n";
+		} elsif ($score == 1 || $score == 2) {
 			$search_output = 'FAILED';
 			$id_output = 'FAILED';
+			$object->set_score($type, $entry_to_query, $strain, $score); # Record all the failed scores for curation purposes later.
 		} else {
 			$search_output = 'FAILED';
 			$id_output = 'FAILED';
 		}
 	}
-	$object->set_score($type, $entry_to_query, $score);
 	return ($search_output, $id_output);
 }
 sub genotype_search {
