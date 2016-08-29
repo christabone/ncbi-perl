@@ -83,6 +83,13 @@ sub set_consolidated_results {
 	$self->{ConsolidatedOutput}{$search_type_id} = $id_output;
 }
 
+sub get_consolidated_results {
+	my ($self, $search_type, $output, $id_output) = @_;
+	my $search_type_id = $search_type . '_id';
+	$self->{ConsolidatedOutput}{$search_type};
+	$self->{ConsolidatedOutput}{$search_type_id};
+}
+
 sub get_new_results {
 	my ($self, $search_type) = @_;
 	$self->{$search_type};

@@ -131,7 +131,7 @@ foreach my $object (@object_array) { # Load an object.
 					# Once the search is returned, we need to store it in a more complicated manner.
 					# We need to sort by search_type and further by the original column header.
 					# This is because we need to resolve the results further (i.e. if 3 answers come back for cell_line via 3 searches, which is best?).
-					$object->set_new_results($search_type, $key, $search_output, $id_output);
+					$object->set_new_results($search_type, $key, $search_output, $id_output); # Sets the search results (stores FAILED as well).
 					if ($search_output ne "FAILED") {
 						$successful_match_output{$search_type}{$query} = $search_output; # Build a successful match hash to speed up future searches.
 						$successful_match_id{$search_type}{$query} = $id_output; # Successful match hash for ids too.
@@ -144,6 +144,7 @@ foreach my $object (@object_array) { # Load an object.
 	}
 }
 
+# Print close matches for curator intervention.
 foreach my $object (@object_array) { # Load an object.
 	my $accession = $object->get_accession();
 	my $hash_ref = $object->get_all_scores(); # Returns a HoH to of score results. First keys are search types. Second keys are literal search terms. Third is compared value. Final value is a score.
@@ -166,12 +167,13 @@ foreach my $object (@object_array) { # Load an object.
 	}
 }
 
+# Consolidate the results.
 print "Consolidation\n";
 print "-------------\n";
-foreach my $object (@object_array) { # Load an object. Consolidate via ids.
-	&consolidate_output($object, 'sex_id');
-	&consolidate_output($object, 'cell_line_id');
-	&consolidate_output($object, 'stage_id');
+foreach my $object (@object_array) { # Load an object. Consolidate via names (ids are also used in the subroutine).
+	&consolidate_output($object, 'sex');
+	&consolidate_output($object, 'cell_line');
+	&consolidate_output($object, 'stage');
 	&consolidate_output($object, 'strain');
 	&consolidate_output($object, 'tissue');
 }
@@ -180,14 +182,35 @@ foreach my $object (@object_array) { # Load an object. Consolidate via ids.
 &statistics('sex_id');
 &statistics('cell_line_id');
 &statistics('stage_id');
-&statistics('strain');
-&statistics('tissue');
+&statistics('strain_id');
+&statistics('tissue_id');
 
 # Output to TSV
 my $tsv_out = 'final_output.tsv';
 open (TSVOUT,">$tsv_out") or die "WARNING: ERROR: Cannot open tsv output\n";
 binmode(TSVOUT, ":utf8");
-
+print TSVOUT "ID\tsex\tsex_id\tcell_line\tcell_line_id\tstage\tstage_id\tstrain\tstrain_id\ttissue\ttissue_id\n";
+foreach my $object (@object_array) { 
+	my $ID = $object->get_accession();
+	my ($sex, $sex_id) = $object->get_consolidated_results('sex');
+	my ($cell_line, $cell_line_id) = $object->get_consolidated_results('cell_line');
+	my ($stage, $stage_id) = $object->get_consolidated_results('stage');
+	my ($strain, $strain_id) = $object->get_consolidated_results('strain');
+	my ($tissue, $tissue_id) = $object->get_consolidated_results('tissue');
+	print TSVOUT "$ID\t";
+	if (defined $sex) { print TSVOUT "$sex\t"; } else { print TSVOUT "\t"; }
+	if (defined $sex_id) { print TSVOUT "$sex_id\t"; } else { print TSVOUT "\t"; }
+	if (defined $cell_line) { print TSVOUT "$cell_line\t"; } else { print TSVOUT "\t"; }
+	if (defined $cell_line_id) { print TSVOUT "$cell_line_id\t"; } else { print TSVOUT "\t"; }
+	if (defined $stage) { print TSVOUT "$stage\t"; } else { print TSVOUT "\t"; }
+	if (defined $stage_id) { print TSVOUT "$stage_id\t"; } else { print TSVOUT "\t"; }
+	if (defined $strain) { print TSVOUT "$strain\t"; } else { print TSVOUT "\t"; }
+	if (defined $strain_id) { print TSVOUT "$strain_id\t"; } else { print TSVOUT "\t"; }
+	if (defined $tissue) { print TSVOUT "$tissue\t"; } else { print TSVOUT "\t"; }
+	if (defined $tissue_id) { print TSVOUT "$tissue_id\t"; } else { print TSVOUT "\t"; }
+	print TSVOUT "\n";
+}
+close TSVOUT;
 
 # Data Dumper commands for internal testing.
 # print Data::Dumper->Dump([\%metadata_hash], ['*metadata_hash']);
@@ -458,22 +481,22 @@ sub sex_search {
 	$entry_to_query = lc($entry_to_query); # change to lower case.
 	if ($entry_to_query eq 'male' || $entry_to_query eq 'm') {
 		$search_output = 'male';
-		$id_output = 'FBcv:0000333';
+		$id_output = 'FBcv0000333';
 	} elsif ($entry_to_query eq 'female' || $entry_to_query eq 'f') {
 		$search_output = 'female';
-		$id_output = 'FBcv:0000334';
+		$id_output = 'FBcv0000334';
 	} elsif ($entry_to_query eq 'mated male' || $entry_to_query eq 'mated_male' || $entry_to_query eq 'mated-male') {
 		$search_output = 'mated male';
-		$id_output = 'FBcv:0000729';
+		$id_output = 'FBcv0000729';
 	} elsif ($entry_to_query eq 'mated female' || $entry_to_query eq 'mated_female' || $entry_to_query eq 'mated-female') {
 		$search_output = 'mated female';
-		$id_output = 'FBcv:0000727';
+		$id_output = 'FBcv0000727';
 	} elsif ($entry_to_query eq 'virgin male' || $entry_to_query eq 'virgin_male' || $entry_to_query eq 'virgin-male') {
 		$search_output = 'virgin male';
-		$id_output = 'FBcv:0000728';
+		$id_output = 'FBcv0000728';
 	} elsif ($entry_to_query eq 'virgin female' || $entry_to_query eq 'virgin_female' || $entry_to_query eq 'virgin-female') {
 		$search_output = 'virgin female';
-		$id_output = 'FBcv:0000726';
+		$id_output = 'FBcv0000726';
 	} else {
 		$search_output = 'FAILED';
 		$id_output = 'FAILED';
@@ -486,13 +509,18 @@ sub consolidate_output {
 	# A subroutine to consolidate the output based on "majority wins" (with an exception for 'FAILED' results).
 	my $object = $_[0];
 	my $type = $_[1];
-	my $hash_ref = $object->get_new_results($type); # Get all the id results for that object.
+	my $type_id = "$type" . '_id';
+	my $hash_ref = $object->get_new_results($type_id); # Get all the id results for that object.
+	my $hash_ref_entries = $object->get_new_results($type); # Get all the actual entries (which correspond to the ids above).
+	my %hash_entry_id_xref;
 	my $number_of_keys = scalar (keys %{$hash_ref}); # Get all the keys for the id results (the keys are the column names that were searched).
 	if ($number_of_keys != 0) { # If the number of keys are not empty. In other words, only compute results were the subject (e.g. sex) was searched.
 		my %check_hash; # Create a hash to check the results between different between columns.
 		foreach my $key (keys %{$hash_ref}) {
 			my $output_id = $hash_ref->{$key}; # Grab the output_id from the search.
+			my $output_entry = $hash_ref_entries->{$key};
 			$check_hash{$output_id}++; # Store the id in the check_hash.
+			$hash_entry_id_xref{$output_id} = $output_entry # A cross-reference has to associate id's with their respective entries.
 		}
 		my $check_keys = scalar (keys %check_hash);
 		# Count the number of different id numbers we stored in the check_hash.
@@ -504,13 +532,15 @@ sub consolidate_output {
 		if ($check_keys == 1) { 
 			my $entry_value = (%check_hash)[0]; # Hash slice to grab first value of hash entry.
 			if ($entry_value eq 'FAILED'){
-				$statistics{$type}{'failed'}++;	
+				print PROUT "SINGLE OUTPUT (FAILED) => $accession\t$type\n"; # Note, we don't store FAILED outputs as consolidated.
+				$statistics{$type_id}{'failed'}++;
+
 			} else {
-				$statistics{$type}{'successful'}++;
+				my $final_output_id = (keys %check_hash)[0]; # Hash slice. Only 1 key. This is the output_id.
+			    $object->set_consolidated_results($type_id, $hash_entry_id_xref{$final_output_id}, $final_output_id); # Storing the Search type, Output, and ID output.
+			    print PROUT "SINGLE OUTPUT => $accession\t$type\t$final_output_id\n";
+			    $statistics{$type_id}{'successful'}++;
 			}
-			my $final_output_id = (keys %check_hash)[0]; # Hash slice. Only 1 key. This is the output_id.
-			$object->set_consolidated_results($type, $hash_ref->{$final_output_id}, $final_output_id); # Storing the Search type, Output, and ID output.
-			print PROUT "SINGLE OUTPUT => $accession\t$type\t$final_output_id\n";
 		} elsif ($check_keys > 1) {
 			print PROUT "ATTEMPTING CONSOLIDATION for $accession $type\n";
 			my $largest = 0;
@@ -526,13 +556,25 @@ sub consolidate_output {
 					$largest = $to_compare;
 				}
 			}
-			if ($largest == $second_largest) {
-				print PROUT "NOT CONSOLIDATED => $accession\t$type\t$largest_id\t$second_largest_id\n";
-				$statistics{$type}{'failed'}++;
+			if ($largest == $second_largest) { # If there are equal amounts of the first two entries (no clear majority) then we go with a choice from Magic (if it exists).
+				# This ONLY works if a column named "Magic" is used once-per-category. Having "Magic column 1" and "Magic column 2" both for "sex" will break this!
+				foreach my $key (keys %{$hash_ref}) { # Go back through the original hash_ref look where keys are column names.
+					my $lc_key = lc($key);
+					if (index($lc_key, 'magic') != -1) { # Check if the word 'magic' is within the column name.
+						my $final_output_id = $hash_ref->{$key};
+						$object->set_consolidated_results($type_id, $hash_entry_id_xref{$final_output_id}, $final_output_id); # Storing the Search type, Output, and ID output.
+						print PROUT "CONSOLIDATED (MAGIC PRIORITY) => $accession\t$type\t$final_output_id\n";
+						$statistics{$type_id}{'successful'}++;
+					} else {
+						print PROUT "NOT CONSOLIDATED => $accession\t$type\t$largest_id\t$second_largest_id\n";
+						$statistics{$type_id}{'failed'}++;
+					}
+				}
 			} else {
 				my $final_output_id = $largest_id;
-				$object->set_consolidated_results($type, $hash_ref->{$final_output_id}, $final_output_id); # Storing the Search type, Output, and ID output.
-				print PROUT "CONSOLIDATED => $accession\t$type\t$final_output_id\n";	
+				$object->set_consolidated_results($type_id, $hash_entry_id_xref{$final_output_id}, $final_output_id); # Storing the Search type, Output, and ID output.
+				print PROUT "CONSOLIDATED (MAJORITY) => $accession\t$type\t$final_output_id\n";
+				$statistics{$type_id}{'successful'}++;	
 			}
 		}
 	}
@@ -550,17 +592,4 @@ sub statistics {
 	print "Percentage: ";
 	printf("%.2f", $percentage);
 	print "\n\n";
-}
-
-sub longest_element {
-	# Taken from http://stackoverflow.com/questions/4182010/the-fastest-way-execution-time-to-find-the-longest-element-in-an-list
-    my $max = -1;
-    my $max_ref;
-    for (@_) {
-        if (length > $max) {  # no temp variable, length() twice is faster
-            $max = length;
-            $max_ref = \$_;   # avoid any copying
-        }
-    }
-    $$max_ref
 }
