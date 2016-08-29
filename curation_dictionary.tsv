@@ -32,4 +32,5 @@ cell_line	CME W2	CME-W2
 cell_line	S-2R+	S2R+
 tissue	whole_organism	organism
 tissue	Whole_organism	organism
+sample_type	whole_organism	whole organism
 

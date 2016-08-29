@@ -176,38 +176,43 @@ foreach my $object (@object_array) { # Load an object. Consolidate via names (id
 	&consolidate_output($object, 'stage');
 	&consolidate_output($object, 'strain');
 	&consolidate_output($object, 'tissue');
+	&consolidate_output($object, 'sample_type');
 }
 
 # Print statistics
-&statistics('sex_id');
-&statistics('cell_line_id');
-&statistics('stage_id');
-&statistics('strain_id');
-&statistics('tissue_id');
+&statistics('sex');
+&statistics('cell_line');
+&statistics('stage');
+&statistics('strain');
+&statistics('tissue');
+&statistics('sample_type');
 
 # Output to TSV
 my $tsv_out = 'final_output.tsv';
 open (TSVOUT,">$tsv_out") or die "WARNING: ERROR: Cannot open tsv output\n";
 binmode(TSVOUT, ":utf8");
-print TSVOUT "ID\tsex\tsex_id\tcell_line\tcell_line_id\tstage\tstage_id\tstrain\tstrain_id\ttissue\ttissue_id\n";
+print TSVOUT "ID\tsample_type\tsample_type_id\tsex\tsex_id\tcell_line\tcell_line_id\tstage\tstage_id\tstrain\tstrain_id\ttissue\ttissue_id\n";
 foreach my $object (@object_array) { 
 	my $ID = $object->get_accession();
+	my ($sample_type, $sample_type_id) = $object->get_consolidated_results('sample_type');
 	my ($sex, $sex_id) = $object->get_consolidated_results('sex');
 	my ($cell_line, $cell_line_id) = $object->get_consolidated_results('cell_line');
 	my ($stage, $stage_id) = $object->get_consolidated_results('stage');
 	my ($strain, $strain_id) = $object->get_consolidated_results('strain');
 	my ($tissue, $tissue_id) = $object->get_consolidated_results('tissue');
 	print TSVOUT "$ID\t";
+	if (defined $sample_type) { print TSVOUT "$sample_type\t"; } else { print TSVOUT "\t"; }
+	if (defined $sample_type_id) { $sample_type_id =~ s/://g; print TSVOUT "$sample_type_id\t"; } else { print TSVOUT "\t"; }
 	if (defined $sex) { print TSVOUT "$sex\t"; } else { print TSVOUT "\t"; }
-	if (defined $sex_id) { print TSVOUT "$sex_id\t"; } else { print TSVOUT "\t"; }
+	if (defined $sex_id) { $sex_id =~ s/://g; print TSVOUT "$sex_id\t"; } else { print TSVOUT "\t"; }
 	if (defined $cell_line) { print TSVOUT "$cell_line\t"; } else { print TSVOUT "\t"; }
-	if (defined $cell_line_id) { print TSVOUT "$cell_line_id\t"; } else { print TSVOUT "\t"; }
+	if (defined $cell_line_id) { $cell_line_id =~ s/://g; print TSVOUT "$cell_line_id\t"; } else { print TSVOUT "\t"; }
 	if (defined $stage) { print TSVOUT "$stage\t"; } else { print TSVOUT "\t"; }
-	if (defined $stage_id) { print TSVOUT "$stage_id\t"; } else { print TSVOUT "\t"; }
+	if (defined $stage_id) { $stage_id =~ s/://g; print TSVOUT "$stage_id\t"; } else { print TSVOUT "\t"; }
 	if (defined $strain) { print TSVOUT "$strain\t"; } else { print TSVOUT "\t"; }
-	if (defined $strain_id) { print TSVOUT "$strain_id\t"; } else { print TSVOUT "\t"; }
+	if (defined $strain_id) { $strain_id =~ s/://g; print TSVOUT "$strain_id\t"; } else { print TSVOUT "\t"; }
 	if (defined $tissue) { print TSVOUT "$tissue\t"; } else { print TSVOUT "\t"; }
-	if (defined $tissue_id) { print TSVOUT "$tissue_id\t"; } else { print TSVOUT "\t"; }
+	if (defined $tissue_id) { $tissue_id =~ s/://g; print TSVOUT "$tissue_id\t"; } else { print TSVOUT "\t"; }
 	print TSVOUT "\n";
 }
 close TSVOUT;
@@ -253,7 +258,7 @@ sub parse_for_hash_of_hashes {
 	my $hash_ref = $_[1];
 
 	open(my $data, '<:encoding(utf8)', $user_list) or die "Could not open '$user_list' $!\n";
-	while (my $fields = $tsv_obj->getline( $data )) { # Why does tsv_obj work here if we don't explicitly pass it? TODO google it.
+	while (my $fields = $tsv_obj->getline( $data )) {
 			$hash_ref->{$fields->[0]}{$fields->[1]} = $fields->[2]; # Parse the two columns of the user list into a hash.
 		}
 	close $data;	
@@ -323,11 +328,26 @@ sub sample_type_search {
 	my $entry_to_query = $_[0];
 	my $search_type = $_[1];
 	my $object = $_[2];
-	my ($search_output, $id_output);
+	my $type = 'sample_type';
+	my ($search_output, $id_output, $score);
 
-	$search_output = 'FAILED';
-	$id_output = 'FAILED';
-
+	foreach my $sample_type (keys %cv_hash) {
+		my $id = $cv_hash{$sample_type};
+		my $lc_sample_type = lc($sample_type);
+		my $lc_entry_to_query = lc($entry_to_query);
+		$score = distance($lc_entry_to_query, $lc_sample_type);
+		if ($score == 0) {
+			$search_output = $sample_type;
+			$id_output = $id;
+			$object->set_score($type, $entry_to_query, $sample_type, $score);
+			$object->set_match($type, $entry_to_query, $score); # Flag the match as a success.
+			return ($search_output, $id_output);
+		} else {
+			$object->set_score($type, $entry_to_query, $sample_type, $score); # Record all the failed scores for curation purposes later.
+			$search_output = 'FAILED';
+			$id_output = 'FAILED';
+		}
+	}
 	return ($search_output, $id_output);
 }
 
@@ -533,13 +553,13 @@ sub consolidate_output {
 			my $entry_value = (%check_hash)[0]; # Hash slice to grab first value of hash entry.
 			if ($entry_value eq 'FAILED'){
 				print PROUT "SINGLE OUTPUT (FAILED) => $accession\t$type\n"; # Note, we don't store FAILED outputs as consolidated.
-				$statistics{$type_id}{'failed'}++;
+				$statistics{$type}{'failed'}++;
 
 			} else {
 				my $final_output_id = (keys %check_hash)[0]; # Hash slice. Only 1 key. This is the output_id.
-			    $object->set_consolidated_results($type_id, $hash_entry_id_xref{$final_output_id}, $final_output_id); # Storing the Search type, Output, and ID output.
+			    $object->set_consolidated_results($type, $hash_entry_id_xref{$final_output_id}, $final_output_id); # Storing the Search type, Output, and ID output.
 			    print PROUT "SINGLE OUTPUT => $accession\t$type\t$final_output_id\n";
-			    $statistics{$type_id}{'successful'}++;
+			    $statistics{$type}{'successful'}++;
 			}
 		} elsif ($check_keys > 1) {
 			print PROUT "ATTEMPTING CONSOLIDATION for $accession $type\n";
@@ -558,23 +578,26 @@ sub consolidate_output {
 			}
 			if ($largest == $second_largest) { # If there are equal amounts of the first two entries (no clear majority) then we go with a choice from Magic (if it exists).
 				# This ONLY works if a column named "Magic" is used once-per-category. Having "Magic column 1" and "Magic column 2" both for "sex" will break this!
+				my $is_magic = 'false';
 				foreach my $key (keys %{$hash_ref}) { # Go back through the original hash_ref look where keys are column names.
 					my $lc_key = lc($key);
 					if (index($lc_key, 'magic') != -1) { # Check if the word 'magic' is within the column name.
 						my $final_output_id = $hash_ref->{$key};
-						$object->set_consolidated_results($type_id, $hash_entry_id_xref{$final_output_id}, $final_output_id); # Storing the Search type, Output, and ID output.
+						$object->set_consolidated_results($type, $hash_entry_id_xref{$final_output_id}, $final_output_id); # Storing the Search type, Output, and ID output.
 						print PROUT "CONSOLIDATED (MAGIC PRIORITY) => $accession\t$type\t$final_output_id\n";
-						$statistics{$type_id}{'successful'}++;
-					} else {
-						print PROUT "NOT CONSOLIDATED => $accession\t$type\t$largest_id\t$second_largest_id\n";
-						$statistics{$type_id}{'failed'}++;
+						$statistics{$type}{'successful'}++;
+						$is_magic = 'true';
 					}
+				}
+				if ($is_magic eq 'false') { # If we never found any magic entries in the last section.
+					print PROUT "NOT CONSOLIDATED => $accession\t$type\t$largest_id\t$second_largest_id\n";
+					$statistics{$type}{'failed'}++;
 				}
 			} else {
 				my $final_output_id = $largest_id;
-				$object->set_consolidated_results($type_id, $hash_entry_id_xref{$final_output_id}, $final_output_id); # Storing the Search type, Output, and ID output.
+				$object->set_consolidated_results($type, $hash_entry_id_xref{$final_output_id}, $final_output_id); # Storing the Search type, Output, and ID output.
 				print PROUT "CONSOLIDATED (MAJORITY) => $accession\t$type\t$final_output_id\n";
-				$statistics{$type_id}{'successful'}++;	
+				$statistics{$type}{'successful'}++;	
 			}
 		}
 	}
