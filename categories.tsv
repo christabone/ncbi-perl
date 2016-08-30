@@ -9,7 +9,7 @@ Sample description, generated automatically by Magic	none
 Stage (in Magic)	stage
 details column J	stage
 Tissue (in Magic)	sample_type	tissue
-type column L	cell_line	stage
+Magic type column L	cell_line	stage
 details column M	cell_line	tissue
 System	none
 type column O	none

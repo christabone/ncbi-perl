@@ -150,7 +150,6 @@ foreach my $object (@object_array) { # Load an object.
 		}
 	}
 }
-
 print `clear`;
 $object_count = 0;
 # Print close matches for curator intervention.
@@ -190,7 +189,7 @@ foreach my $object (@object_array) { # Load an object. Consolidate via names (id
 	&consolidate_output($object, 'strain');
 	&consolidate_output($object, 'tissue');
 	&consolidate_output($object, 'sample_type');
-	&consolidate_output($object, 'key_genes');
+	# &consolidate_output($object, 'key_genes');
 }
 
 # Print statistics
@@ -200,7 +199,7 @@ foreach my $object (@object_array) { # Load an object. Consolidate via names (id
 &statistics('strain');
 &statistics('tissue');
 &statistics('sample_type');
-&statistics('key_genes');
+# &statistics('key_genes');
 
 # Output to TSV
 my $tsv_out = 'final_output.tsv';
@@ -215,7 +214,7 @@ foreach my $object (@object_array) {
 	my ($stage, $stage_id) = $object->get_consolidated_results('stage');
 	my ($strain, $strain_id) = $object->get_consolidated_results('strain');
 	my ($tissue, $tissue_id) = $object->get_consolidated_results('tissue');
-	my ($key_genes, $key_genes_id) = $object->get_consolidated_results('key_genes');
+	# my ($key_genes, $key_genes_id) = $object->get_consolidated_results('key_genes');
 	print TSVOUT "$ID\t";
 	if (defined $sample_type) { print TSVOUT "$sample_type\t"; } else { print TSVOUT "\t"; }
 	if (defined $sample_type_id) { $sample_type_id =~ s/://g; print TSVOUT "$sample_type_id\t"; } else { print TSVOUT "\t"; }
@@ -229,8 +228,8 @@ foreach my $object (@object_array) {
 	if (defined $strain_id) { $strain_id =~ s/://g; print TSVOUT "$strain_id\t"; } else { print TSVOUT "\t"; }
 	if (defined $tissue) { print TSVOUT "$tissue\t"; } else { print TSVOUT "\t"; }
 	if (defined $tissue_id) { $tissue_id =~ s/://g; print TSVOUT "$tissue_id\t"; } else { print TSVOUT "\t"; }
-	if (defined $key_genes) { print TSVOUT "$key_genes\t"; } else { print TSVOUT "\t"; }
-	if (defined $key_genes_id) { $key_genes_id =~ s/://g; print TSVOUT "$key_genes_id\t"; } else { print TSVOUT "\t"; }
+	# if (defined $key_genes) { print TSVOUT "$key_genes\t"; } else { print TSVOUT "\t"; }
+	# if (defined $key_genes_id) { $key_genes_id =~ s/://g; print TSVOUT "$key_genes_id\t"; } else { print TSVOUT "\t"; }
 	print TSVOUT "\n";
 }
 close TSVOUT;
@@ -333,8 +332,8 @@ sub main_search {
 		($search_output, $id_output) = &strain_search($entry_to_query, $search_type, $object);
 	} elsif ($search_type eq "genotype") {
 		($search_output, $id_output) = &genotype_search($entry_to_query, $search_type, $object);
-	} elsif ($search_type eq "key_genes") {
-		($search_output, $id_output) = &key_genes_search($entry_to_query, $search_type, $object);
+	 } elsif ($search_type eq "key_genes") {
+	    ($search_output, $id_output) = &key_genes_search($entry_to_query, $search_type, $object);
 	} elsif ($search_type eq "sex") {
 		($search_output, $id_output) = &sex_search($entry_to_query, $search_type, $object);
 	}
@@ -500,35 +499,44 @@ sub key_genes_search {
 	my $entry_to_query = $_[0];
 	my $search_type = $_[1];
 	my $object = $_[2];
-	my $type = 'key_genes';
-	my ($search_output, $id_output, $score);
-	my $is_successful = 'false';
+	my ($search_output, $id_output);
 
-	foreach my $key_genes (keys %gn_hash) {
-		my $id = $gn_hash{$key_genes};
-		my $lc_key_genes = lc($key_genes);
-		my $lc_entry_to_query = lc($entry_to_query);
-		$lc_key_genes =~ s/[^a-zA-Z0-9]-/ /g; # Replacing all non-alphanumeric characters (except hyphens) with spaces.
-		my @words_to_check = split / /, $lc_key_genes; # Spliting the query into words based on spaces.
-		foreach my $split_word (@words_to_check) {
-			$score = distance($lc_entry_to_query, $split_word);
-			if ($score == 0) {
-				$search_output = $search_output . "; " . $split_word;
-				$id_output = $id_output . "; " . $id;
-				print PROUT "MATCH\t$type\t$entry_to_query\t$split_word\n";
-				$is_successful = 'true';
-			}
-		}
-		if ($is_successful eq 'true' ){
-			$object->set_score($type, $entry_to_query, $key_genes, $score); # Record the match.
-			$object->set_match($type, $entry_to_query, $score); # Flag the match as a success.	
-		} else {
-			$search_output = 'FAILED';
-			$id_output = 'FAILED';
-			$object->set_score($type, $entry_to_query, $key_genes, $score); # Record all the failed scores for curation purposes later.
-		}
-	}
+	$search_output = 'FAILED';
+	$id_output = 'FAILED';
+
 	return ($search_output, $id_output);
+	# my $entry_to_query = $_[0];
+	# my $search_type = $_[1];
+	# my $object = $_[2];
+	# my $type = 'key_genes';
+	# my ($search_output, $id_output, $score);
+	# my $is_successful = 'false';
+
+	# foreach my $key_genes (keys %gn_hash) {
+	# 	my $id = $gn_hash{$key_genes};
+	# 	my $lc_key_genes = lc($key_genes);
+	# 	my $lc_entry_to_query = lc($entry_to_query);
+	# 	$lc_key_genes =~ s/[^a-zA-Z0-9]-/ /g; # Replacing all non-alphanumeric characters (except hyphens) with spaces.
+	# 	my @words_to_check = split / /, $lc_key_genes; # Spliting the query into words based on spaces.
+	# 	foreach my $split_word (@words_to_check) {
+	# 		$score = distance($lc_entry_to_query, $split_word);
+	# 		if ($score == 0) {
+	# 			$search_output = $search_output . "; " . $split_word;
+	# 			$id_output = $id_output . "; " . $id;
+	# 			print PROUT "MATCH\t$type\t$entry_to_query\t$split_word\n";
+	# 			$is_successful = 'true';
+	# 		}
+	# 	}
+	# 	if ($is_successful eq 'true' ){
+	# 		$object->set_score($type, $entry_to_query, $key_genes, $score); # Record the match.
+	# 		$object->set_match($type, $entry_to_query, $score); # Flag the match as a success.	
+	# 	} else {
+	# 		$search_output = 'FAILED';
+	# 		$id_output = 'FAILED';
+	# 		$object->set_score($type, $entry_to_query, $key_genes, $score); # Record all the failed scores for curation purposes later.
+	# 	}
+	# }
+	# return ($search_output, $id_output);
 }
 
 sub sex_search {
