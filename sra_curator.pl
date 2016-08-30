@@ -30,7 +30,9 @@ my $profout = 'report_curator.log';
 open (PROUT,">$profout") or die "WARNING: ERROR: Cannot open report output\n";
 binmode(PROUT, ":utf8");
 
-my %store_hash = %{retrieve('extracted.results')}; # Load the extracted.results file from the sra_xml_parser.pl script.
+select((select(PROUT), $|=1)[0]); # Make the PROUT filehandle "hot" so we can view the log results with tail -f in another terminal.
+
+# my %store_hash = %{retrieve('extracted.results')}; # Load the extracted.results file from the sra_xml_parser.pl script.
 
 # Initialize the development, anatomy, and controlled vocabulary hashes.
 our %dv_hash; # development
@@ -119,7 +121,12 @@ foreach my $key (sort keys %metadata_hash) {
 
 # Main classifying algorithm. Hold on to your butts.
 # Iterate through our objects.
+my $object_array_size = scalar(@object_array);
+my $object_count;
+print `clear`;
 foreach my $object (@object_array) { # Load an object. 
+	$object_count++;
+	print "Processing... $object_count\/$object_array_size\r";
 	my $object_hash_ref = $object->get_entire_old_metadata(); # Pull out the old metadata for that object.
 	foreach my $key (keys % {$object_hash_ref}) { # For each column title for an object.
 		my $query = $object_hash_ref -> {$key}; # Get the value, this is the actual query to use. 
@@ -144,8 +151,12 @@ foreach my $object (@object_array) { # Load an object.
 	}
 }
 
+print `clear`;
+$object_count = 0;
 # Print close matches for curator intervention.
 foreach my $object (@object_array) { # Load an object.
+    $object_count++;
+	print "Printing close matches... $object_count\/$object_array_size\r";
 	my $accession = $object->get_accession();
 	my $hash_ref = $object->get_all_scores(); # Returns a HoH to of score results. First keys are search types. Second keys are literal search terms. Third is compared value. Final value is a score.
 	if (defined $hash_ref) {
@@ -168,15 +179,18 @@ foreach my $object (@object_array) { # Load an object.
 }
 
 # Consolidate the results.
-print "Consolidation\n";
-print "-------------\n";
+print `clear`;
+$object_count = 0;
 foreach my $object (@object_array) { # Load an object. Consolidate via names (ids are also used in the subroutine).
+	$object_count++;
+	print "Consolidating... $object_count\/$object_array_size\r";
 	&consolidate_output($object, 'sex');
 	&consolidate_output($object, 'cell_line');
 	&consolidate_output($object, 'stage');
 	&consolidate_output($object, 'strain');
 	&consolidate_output($object, 'tissue');
 	&consolidate_output($object, 'sample_type');
+	&consolidate_output($object, 'key_genes');
 }
 
 # Print statistics
@@ -186,12 +200,13 @@ foreach my $object (@object_array) { # Load an object. Consolidate via names (id
 &statistics('strain');
 &statistics('tissue');
 &statistics('sample_type');
+&statistics('key_genes');
 
 # Output to TSV
 my $tsv_out = 'final_output.tsv';
 open (TSVOUT,">$tsv_out") or die "WARNING: ERROR: Cannot open tsv output\n";
 binmode(TSVOUT, ":utf8");
-print TSVOUT "ID\tsample_type\tsample_type_id\tsex\tsex_id\tcell_line\tcell_line_id\tstage\tstage_id\tstrain\tstrain_id\ttissue\ttissue_id\n";
+print TSVOUT "ID\tsample_type\tsample_type_id\tsex\tsex_id\tcell_line\tcell_line_id\tstage\tstage_id\tstrain\tstrain_id\ttissue\ttissue_id\tkey_genes\tkey_genes_id\n";
 foreach my $object (@object_array) { 
 	my $ID = $object->get_accession();
 	my ($sample_type, $sample_type_id) = $object->get_consolidated_results('sample_type');
@@ -200,6 +215,7 @@ foreach my $object (@object_array) {
 	my ($stage, $stage_id) = $object->get_consolidated_results('stage');
 	my ($strain, $strain_id) = $object->get_consolidated_results('strain');
 	my ($tissue, $tissue_id) = $object->get_consolidated_results('tissue');
+	my ($key_genes, $key_genes_id) = $object->get_consolidated_results('key_genes');
 	print TSVOUT "$ID\t";
 	if (defined $sample_type) { print TSVOUT "$sample_type\t"; } else { print TSVOUT "\t"; }
 	if (defined $sample_type_id) { $sample_type_id =~ s/://g; print TSVOUT "$sample_type_id\t"; } else { print TSVOUT "\t"; }
@@ -213,6 +229,8 @@ foreach my $object (@object_array) {
 	if (defined $strain_id) { $strain_id =~ s/://g; print TSVOUT "$strain_id\t"; } else { print TSVOUT "\t"; }
 	if (defined $tissue) { print TSVOUT "$tissue\t"; } else { print TSVOUT "\t"; }
 	if (defined $tissue_id) { $tissue_id =~ s/://g; print TSVOUT "$tissue_id\t"; } else { print TSVOUT "\t"; }
+	if (defined $key_genes) { print TSVOUT "$key_genes\t"; } else { print TSVOUT "\t"; }
+	if (defined $key_genes_id) { $key_genes_id =~ s/://g; print TSVOUT "$key_genes_id\t"; } else { print TSVOUT "\t"; }
 	print TSVOUT "\n";
 }
 close TSVOUT;
@@ -339,6 +357,7 @@ sub sample_type_search {
 		if ($score == 0) {
 			$search_output = $sample_type;
 			$id_output = $id;
+			print PROUT "MATCH\t$type\t$entry_to_query\t$search_output\n";
 			$object->set_score($type, $entry_to_query, $sample_type, $score);
 			$object->set_match($type, $entry_to_query, $score); # Flag the match as a success.
 			return ($search_output, $id_output);
@@ -366,6 +385,7 @@ sub stage_search {
 		if ($score == 0) {
 			$search_output = $stage;
 			$id_output = $id;
+			print PROUT "MATCH\t$type\t$entry_to_query\t$search_output\n";
 			$object->set_score($type, $entry_to_query, $stage, $score);
 			$object->set_match($type, $entry_to_query, $score); # Flag the match as a success.
 			return ($search_output, $id_output);
@@ -393,7 +413,7 @@ sub tissue_search {
 		if ($score == 0) {
 			$search_output = $tissue;
 			$id_output = $id;
-			print PROUT "$entry_to_query\t$search_output\n";
+			print PROUT "MATCH\t$type\t$entry_to_query\t$search_output\n";
 			$object->set_score($type, $entry_to_query, $tissue, $score);
 			$object->set_match($type, $entry_to_query, $score); # Flag the match as a success.
 			return ($search_output, $id_output);
@@ -421,7 +441,7 @@ sub cell_line_search {
 		if ($score == 0) {
 			$search_output = $cell_line;
 			$id_output = $id;
-			print PROUT "$entry_to_query\t$search_output\n";
+			print PROUT "MATCH\t$type\t$entry_to_query\t$search_output\n";
 			$object->set_score($type, $entry_to_query, $cell_line, $score);
 			$object->set_match($type, $entry_to_query, $score); # Flag the match as a success.
 			return ($search_output, $id_output);
@@ -450,7 +470,7 @@ sub strain_search {
 		if ($score == 0) {
 			$search_output = $strain;
 			$id_output = $id;
-			print PROUT "$entry_to_query\t$search_output\n";
+			print PROUT "MATCH\t$type\t$entry_to_query\t$search_output\n";
 			$object->set_score($type, $entry_to_query, $strain, $score); # Record the match.
 			$object->set_match($type, $entry_to_query, $score); # Flag the match as a success.
 			return ($search_output, $id_output);
@@ -480,11 +500,34 @@ sub key_genes_search {
 	my $entry_to_query = $_[0];
 	my $search_type = $_[1];
 	my $object = $_[2];
-	my ($search_output, $id_output);
+	my $type = 'key_genes';
+	my ($search_output, $id_output, $score);
+	my $is_successful = 'false';
 
-	$search_output = 'FAILED';
-	$id_output = 'FAILED';
-
+	foreach my $key_genes (keys %gn_hash) {
+		my $id = $gn_hash{$key_genes};
+		my $lc_key_genes = lc($key_genes);
+		my $lc_entry_to_query = lc($entry_to_query);
+		$lc_key_genes =~ s/[^a-zA-Z0-9]-/ /g; # Replacing all non-alphanumeric characters (except hyphens) with spaces.
+		my @words_to_check = split / /, $lc_key_genes; # Spliting the query into words based on spaces.
+		foreach my $split_word (@words_to_check) {
+			$score = distance($lc_entry_to_query, $split_word);
+			if ($score == 0) {
+				$search_output = $search_output . "; " . $split_word;
+				$id_output = $id_output . "; " . $id;
+				print PROUT "MATCH\t$type\t$entry_to_query\t$split_word\n";
+				$is_successful = 'true';
+			}
+		}
+		if ($is_successful eq 'true' ){
+			$object->set_score($type, $entry_to_query, $key_genes, $score); # Record the match.
+			$object->set_match($type, $entry_to_query, $score); # Flag the match as a success.	
+		} else {
+			$search_output = 'FAILED';
+			$id_output = 'FAILED';
+			$object->set_score($type, $entry_to_query, $key_genes, $score); # Record all the failed scores for curation purposes later.
+		}
+	}
 	return ($search_output, $id_output);
 }
 
@@ -577,7 +620,7 @@ sub consolidate_output {
 				}
 			}
 			if ($largest == $second_largest) { # If there are equal amounts of the first two entries (no clear majority) then we go with a choice from Magic (if it exists).
-				# This ONLY works if a column named "Magic" is used once-per-category. Having "Magic column 1" and "Magic column 2" both for "sex" will break this!
+				# WARNING: This ONLY works if a column named "Magic" is used once-per-category. Having "Magic column 1" and "Magic column 2" both for "sex" will break this!
 				my $is_magic = 'false';
 				foreach my $key (keys %{$hash_ref}) { # Go back through the original hash_ref look where keys are column names.
 					my $lc_key = lc($key);

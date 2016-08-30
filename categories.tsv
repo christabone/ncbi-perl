@@ -13,14 +13,14 @@ type column L	cell_line	stage
 details column M	cell_line	tissue
 System	none
 type column O	none
-details column P	none
+Magic details column P	none
 control or treatment or phenotype	none
-details column R	strain	genotype	key_genes
+Magic details column R	strain	genotype	key_genes
 Sex in Magic	sex
 Sex in Zhenxia	sex
 Stage in Zhenxia	stage
 Tissue in ZhenXia	tissue
-Genotype in Zhenxia	genotype	strain	cell_line
+Genotype in Zhenxia	genotype	strain	cell_line	key_genes
 Cell type in Zhenxia	cell_line
 Sample type in ZhenXia	sample_type	tissue
 Center name in Zhenxia	none
